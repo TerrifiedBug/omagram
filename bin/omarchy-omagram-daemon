@@ -1,0 +1,32 @@
+#!/bin/bash
+
+# omarchy:summary=Run the OmaGram bridge daemon in the foreground
+# omarchy:args=[--print-qr]
+
+source "$(dirname "$(readlink -f "$0")")/_common.sh"
+
+print_qr=0
+for arg in "$@"; do
+  case $arg in
+  --print-qr) print_qr=1 ;;
+  -h | --help)
+    echo "Usage: omarchy-omagram-daemon [--print-qr]"
+    echo
+    echo "Runs in the foreground. Normally started by the user service:"
+    echo "  systemctl --user start omarchy-omagram"
+    exit 0
+    ;;
+  *) tg_die "unknown argument: $arg" ;;
+  esac
+done
+
+tg_ensure_setup
+
+if ((print_qr)); then
+  export OMARCHY_OMAGRAM_PRINT_QR=1
+fi
+
+export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--disable-warning=ExperimentalWarning"
+
+cd "$TG_DAEMON_DIR"
+exec "$(tg_node)" index.js

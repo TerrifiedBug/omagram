@@ -1,0 +1,25 @@
+[Unit]
+Description=Telegram bridge for the Omarchy shell
+Documentation=https://github.com/TerrifiedBug/omagram
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+# @PLUGIN_DIR@ is rewritten by install.sh to the installed plugin directory.
+ExecStart=@PLUGIN_DIR@/bin/omarchy-omagram-daemon
+Restart=on-failure
+RestartSec=5
+# The bridge only needs the network, the state dir, and a notification bus.
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+NoNewPrivileges=yes
+MemoryHigh=400M
+Environment=NODE_ENV=production
+Environment=NODE_OPTIONS=--disable-warning=ExperimentalWarning
+
+[Install]
+WantedBy=graphical-session.target

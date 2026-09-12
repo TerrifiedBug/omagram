@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.terrifiedbug.omagram",
+  "name": "OmaGram",
+  "version": "0.1.0",
+  "author": "TerrifiedBug",
+  "license": "MIT",
+  "description": "Telegram in the Omarchy bar: unread badge, desktop notifications, inline reply, and a one-key jump to Telegram Desktop.",
+  "homepage": "https://github.com/TerrifiedBug/omagram",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "BarWidget.qml" },
+  "barWidget": {
+    "displayName": "OmaGram",
+    "description": "Telegram chats, unread badge, and inline reply.",
+    "category": "Communication",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "socketPath": "",
+      "autostartDaemon": true,
+      "showUnreadCount": true,
+      "hideWhenEmpty": false,
+      "chatLimit": 40,
+      "messageLimit": 60,
+      "clientPattern": "org.telegram.desktop",
+      "clientCommand": "uwsm-app -- Telegram",
+      "webAppUrl": ""
+    },
+    "schema": [
+      {
+        "key": "socketPath",
+        "type": "string",
+        "label": "Daemon socket path (blank = default)",
+        "description": "Unix socket the panel talks to. Blank uses $XDG_RUNTIME_DIR/omarchy-omagram.sock, which is what the bundled systemd unit creates.",
+        "defaultValue": ""
+      },
+      {
+        "key": "autostartDaemon",
+        "type": "bool",
+        "label": "Start the daemon automatically",
+        "description": "Starts omarchy-omagram.service the first time the panel cannot reach the socket. Turn this off if you manage the unit yourself.",
+        "defaultValue": true
+      },
+      {
+        "key": "showUnreadCount",
+        "type": "bool",
+        "label": "Show unread count next to the icon",
+        "description": "Draws the unread total beside the Telegram glyph. Muted and archived chats never count.",
+        "defaultValue": true
+      },
+      {
+        "key": "hideWhenEmpty",
+        "type": "bool",
+        "label": "Hide the widget when there is nothing unread",
+        "description": "Collapses the widget while the unread total is zero, so the bar only shows it when something needs attention.",
+        "defaultValue": false
+      },
+      {
+        "key": "chatLimit",
+        "type": "int",
+        "label": "Chats listed in the panel",
+        "description": "How many chats the panel asks the daemon for. Higher values mean a longer list and a slightly bigger snapshot.",
+        "defaultValue": 40
+      },
+      {
+        "key": "messageLimit",
+        "type": "int",
+        "label": "Messages loaded per conversation",
+        "description": "How far back the conversation view reads when a chat is opened.",
+        "defaultValue": 60
+      },
+      {
+        "key": "clientPattern",
+        "type": "string",
+        "label": "Window class/title pattern used to focus Telegram Desktop",
+        "description": "Matched against Hyprland window class and title to decide whether Telegram Desktop is already running before launching it.",
+        "defaultValue": "org.telegram.desktop"
+      },
+      {
+        "key": "clientCommand",
+        "type": "string",
+        "label": "Command that launches Telegram Desktop",
+        "description": "Run when no window matches the pattern above. Change it if your Telegram binary is named differently or lives in a Flatpak.",
+        "defaultValue": "uwsm-app -- Telegram"
+      },
+      {
+        "key": "webAppUrl",
+        "type": "string",
+        "label": "Use Telegram Web at this URL instead of Telegram Desktop (blank = desktop)",
+        "description": "Set to https://web.telegram.org/k/ to open Telegram Web as a webapp window instead of the desktop client.",
+        "defaultValue": ""
+      }
+    ]
+  }
+}

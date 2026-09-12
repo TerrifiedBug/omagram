@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# omarchy:summary=Install daemon deps, the user service, and CLI links (idempotent)
+
+source "$(dirname "$(readlink -f "$0")")/_common.sh"
+
+tg_ensure_setup
+# Start if we just created the unit and nothing is listening yet.
+if ! tg_daemon_running; then
+  systemctl --user restart "$TG_UNIT_NAME" >/dev/null 2>&1 || true
+fi

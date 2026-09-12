@@ -1,0 +1,59 @@
+#!/bin/bash
+
+# omarchy:summary=OmaGram for Omarchy: login, status, send, open, service control
+# omarchy:args=<login|open|focus|status|send|logout|reconnect|read|chats|refresh|messages|ping|ctl|setup|uninstall|start|stop|restart|logs> [args]
+
+source "$(dirname "$(readlink -f "$0")")/_common.sh"
+
+usage() {
+  cat <<'EOF'
+Usage: omarchy-omagram <command> [args]
+
+  login [--phone <number>]  link this device by QR or phone
+  open                      open or focus Telegram Desktop
+  focus <chatId>            open the bar panel on a chat
+  status                    connection state and unread count
+  send <chatId> <text...>   send a Telegram message
+  logout                    end the Telegram session and wipe local credentials
+  reconnect                 reconnect the daemon to Telegram
+  read <chatId>             mark a chat as read
+  chats [n]                 list recent chats
+  refresh                   refresh chats from Telegram
+  messages <chatId> [n]     list recent messages
+  ping                      check daemon connectivity
+  ctl <...>                 raw daemon commands (see omarchy-omagram-ctl -h)
+  setup                     install deps, the user service, and CLI links
+  uninstall                 stop the service and delete credentials
+  start | stop | restart    control the user service
+  logs [-f]                 daemon journal
+EOF
+}
+
+command="${1:-}"
+[[ $# -gt 0 ]] && shift || true
+
+case $command in
+login) exec "$TG_BIN_DIR/omarchy-omagram-login" "$@" ;;
+open) exec "$TG_BIN_DIR/omarchy-omagram-open" "$@" ;;
+focus) exec "$TG_BIN_DIR/omarchy-omagram-focus" "$@" ;;
+status | send | logout | reconnect | read | chats | refresh | messages | ping)
+  exec "$TG_BIN_DIR/omarchy-omagram-ctl" "$command" "$@"
+  ;;
+ctl) exec "$TG_BIN_DIR/omarchy-omagram-ctl" "$@" ;;
+setup) exec "$TG_BIN_DIR/omarchy-omagram-setup" "$@" ;;
+uninstall)
+  tg_uninstall
+  echo "Removed the OmaGram service, CLI links, and local credentials."
+  echo "The bar widget is still listed until: omarchy plugin remove io.github.terrifiedbug.omagram"
+  exit 0
+  ;;
+start) exec systemctl --user start omarchy-omagram.service ;;
+stop) exec systemctl --user stop omarchy-omagram.service ;;
+restart) exec systemctl --user restart omarchy-omagram.service ;;
+logs) exec journalctl --user -u omarchy-omagram.service -n 100 "$@" ;;
+-h | --help | "") usage ;;
+*)
+  usage >&2
+  tg_die "unknown command: $command"
+  ;;
+esac

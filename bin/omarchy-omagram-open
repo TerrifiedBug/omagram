@@ -1,0 +1,33 @@
+#!/bin/bash
+
+# omarchy:summary=Open Telegram Desktop, or focus it if it is already running
+# omarchy:args=
+
+set -euo pipefail
+
+URL="${OMARCHY_OMAGRAM_WEB_URL:-}"
+
+if [[ -z $URL ]]; then
+  exec omarchy-launch-or-focus \
+    "${OMARCHY_OMAGRAM_CLIENT_PATTERN:-org.telegram.desktop}" \
+    "${OMARCHY_OMAGRAM_CLIENT_COMMAND:-uwsm-app -- Telegram}"
+fi
+
+# On Omarchy this focuses an existing window instead of spawning a second one.
+if command -v omarchy-launch-or-focus-webapp >/dev/null 2>&1; then
+  exec omarchy-launch-or-focus-webapp "web.telegram.org" "$URL"
+fi
+
+if command -v omarchy-launch-webapp >/dev/null 2>&1; then
+  exec omarchy-launch-webapp "$URL"
+fi
+
+# Plain-Chromium fallback for a non-Omarchy session.
+for browser in chromium google-chrome-stable brave microsoft-edge-stable vivaldi-stable; do
+  if command -v "$browser" >/dev/null 2>&1; then
+    exec setsid "$browser" --app="$URL" >/dev/null 2>&1
+  fi
+done
+
+echo "omarchy-omagram: no Chromium-family browser found to host Telegram Web" >&2
+exit 1

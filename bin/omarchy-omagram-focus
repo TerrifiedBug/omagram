@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# omarchy:summary=Open an OmaGram chat in the bar panel (used by notification clicks)
+# omarchy:args=<chatId>
+
+source "$(dirname "$(readlink -f "$0")")/_common.sh"
+
+[[ -n ${1:-} ]] || tg_die "usage: omarchy-omagram-focus <chatId>"
+
+PLUGIN_ID="$(sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$TG_ROOT/manifest.json" | head -1)"
+
+# Tell the daemon first: it broadcasts the target chat to every connected panel,
+# so whichever one the shell opens is already on the right conversation.
+"$TG_BIN_DIR/omarchy-omagram-ctl" focus "$1" >/dev/null 2>&1 || true
+
+# Open the bar panel. -q so a missing IPC method is not a hard failure.
+if command -v omarchy-shell >/dev/null 2>&1 && [[ -n $PLUGIN_ID ]]; then
+  omarchy-shell -q shell summon "$PLUGIN_ID" "{}" >/dev/null 2>&1 || true
+fi

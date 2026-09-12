@@ -1,0 +1,207 @@
+#!/bin/bash
+
+# omarchy:summary=Link OmaGram with a QR code or Telegram phone login
+# omarchy:args=[--phone <phone-number>]
+
+source "$(dirname "$(readlink -f "$0")")/_common.sh"
+
+NODE="$(tg_node)"
+CTL=("$NODE" "$TG_DAEMON_DIR/ctl.js")
+QR_FILE="$TG_STATE_DIR/qr.txt"
+
+phone=""
+while (($# > 0)); do
+  case $1 in
+  --phone)
+    [[ -n ${2:-} ]] || tg_die "--phone needs a number in international format, e.g. --phone +441234567890"
+    phone="$2"
+    shift 2
+    ;;
+  -h | --help)
+    echo "Usage: omarchy-omagram login [--phone <phone-number>]"
+    echo
+    echo "Scans a Telegram QR code by default. --phone prompts for the login"
+    echo "code sent by Telegram, and for your two-step password when enabled."
+    exit 0
+    ;;
+  *) tg_die "unknown argument: $1" ;;
+  esac
+done
+
+start_daemon() {
+  if systemctl --user list-unit-files omarchy-omagram.service >/dev/null 2>&1 &&
+    systemctl --user cat omarchy-omagram.service >/dev/null 2>&1; then
+    systemctl --user start omarchy-omagram.service
+  else
+    setsid "$TG_BIN_DIR/omarchy-omagram-daemon" >/dev/null 2>&1 &
+  fi
+}
+
+load_status() {
+  local raw
+  local -a fields
+
+  raw="$("${CTL[@]}" status 2>/dev/null || true)"
+  [[ -n $raw ]] || raw="{}"
+  mapfile -t fields < <(
+    jq -r '
+      (.needsApi // false),
+      (.connection // ""),
+      (.codeViaApp // false),
+      (.passwordHint // ""),
+      (.lastError // ""),
+      (.me.name // .me.id // "")
+    ' <<<"$raw" 2>/dev/null
+  )
+
+  NEEDS_API="${fields[0]:-false}"
+  CONNECTION="${fields[1]:-}"
+  CODE_VIA_APP="${fields[2]:-false}"
+  PASSWORD_HINT="${fields[3]:-}"
+  LAST_ERROR="${fields[4]:-}"
+  ACCOUNT_NAME="${fields[5]:-}"
+}
+
+remaining_seconds() {
+  local remaining=$((deadline - SECONDS))
+  ((remaining > 0)) || tg_die "timed out waiting for Telegram login"
+  printf '%s\n' "$remaining"
+}
+
+submit_code() {
+  local code prompt remaining
+  if [[ $CODE_VIA_APP == "true" ]]; then
+    prompt="Code sent to your Telegram app: "
+  else
+    prompt="Code sent by SMS: "
+  fi
+  remaining="$(remaining_seconds)"
+  if ! IFS= read -rp "$prompt" -t "$remaining" code; then
+    echo
+    tg_die "timed out waiting for Telegram login"
+  fi
+  printf '%s\n' "$code" | "${CTL[@]}" code >/dev/null
+  unset code
+}
+
+submit_password() {
+  local password prompt remaining
+  prompt="Two-step verification password"
+  [[ -z $PASSWORD_HINT ]] || prompt+=" (hint: $PASSWORD_HINT)"
+  prompt+=": "
+  remaining="$(remaining_seconds)"
+  if ! IFS= read -rsp "$prompt" -t "$remaining" password; then
+    echo
+    tg_die "timed out waiting for Telegram login"
+  fi
+  echo
+  printf '%s\n' "$password" | "${CTL[@]}" password >/dev/null
+  unset password
+}
+
+command -v jq >/dev/null 2>&1 || tg_die "jq is required for Telegram login"
+
+if ! tg_daemon_running; then
+  echo "Starting the OmaGram daemon..."
+  start_daemon
+  for _ in {1..40}; do
+    tg_daemon_running && break
+    sleep 0.25
+  done
+  tg_daemon_running || tg_die "daemon did not come up. Check: journalctl --user -u omarchy-omagram -n 50"
+fi
+
+load_status
+if [[ $NEEDS_API == "true" ]]; then
+  echo "Create a Telegram app at https://my.telegram.org/apps"
+  echo "Open API development tools and copy its api_id and api_hash."
+  read -rp 'api_id: ' api_id || tg_die "api_id is required"
+  read -rsp 'api_hash: ' api_hash || {
+    echo
+    tg_die "api_hash is required"
+  }
+  echo
+  printf '%s\n%s\n' "$api_id" "$api_hash" | "${CTL[@]}" api >/dev/null
+  unset api_id api_hash
+  load_status
+fi
+
+if [[ $CONNECTION == "open" ]]; then
+  echo "Already linked as ${ACCOUNT_NAME:0:80}."
+  echo "Run 'omarchy-omagram-ctl logout' first to link a different account."
+  exit 0
+fi
+
+if [[ -n $phone ]]; then
+  echo "Starting Telegram phone login for $phone..."
+  "${CTL[@]}" loginPhone "$phone" >/dev/null
+else
+  if [[ $CONNECTION != "qr" && $CONNECTION != "password" ]]; then
+    echo "Requesting a QR code..."
+    "${CTL[@]}" login >/dev/null
+  fi
+  echo "Waiting for a QR code..."
+fi
+
+deadline=$((SECONDS + 240))
+last_stamp=""
+printed_qr=0
+prompted_state=""
+shown_error=""
+
+while ((SECONDS < deadline)); do
+  load_status
+  new_error=0
+  if [[ -z $LAST_ERROR ]]; then
+    shown_error=""
+  elif [[ $LAST_ERROR != "$shown_error" ]]; then
+    printf 'Telegram login: %s\n' "$LAST_ERROR" >&2
+    shown_error="$LAST_ERROR"
+    new_error=1
+  fi
+
+  case $CONNECTION in
+  open)
+    echo
+    echo "Linked. OmaGram is live in your bar."
+    exit 0
+    ;;
+  code)
+    if [[ $prompted_state != "code" || $new_error -eq 1 ]]; then
+      submit_code
+      prompted_state="code"
+    fi
+    ;;
+  password)
+    if [[ $prompted_state != "password" || $new_error -eq 1 ]]; then
+      submit_password
+      prompted_state="password"
+    fi
+    ;;
+  qr)
+    prompted_state="qr"
+    if [[ -z $phone && -f $QR_FILE ]]; then
+      stamp="$(stat -c %Y "$QR_FILE" 2>/dev/null || echo 0)"
+      if [[ $stamp != "$last_stamp" ]]; then
+        last_stamp="$stamp"
+        printed_qr=1
+        clear
+        echo "Telegram -> Settings -> Devices -> Link Desktop Device"
+        echo "(the QR code refreshes periodically; this screen follows it)"
+        echo
+        cat "$QR_FILE"
+      fi
+    fi
+    ;;
+  *)
+    prompted_state="$CONNECTION"
+    ;;
+  esac
+
+  sleep 1
+done
+
+if [[ -z $phone && $printed_qr -eq 0 ]]; then
+  tg_die "no QR code appeared. Check: journalctl --user -u omarchy-omagram -n 50"
+fi
+tg_die "timed out waiting for Telegram login"
