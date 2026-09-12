@@ -296,11 +296,34 @@ function mergeDialog(entry) {
   return chat
 }
 
+/**
+ * A chat that used to be a single row and now reports topics leaves its old
+ * base row behind in the store, so the list would show both the group and its
+ * topics. Drop the base row once topic rows exist for it.
+ */
+function pruneSupersededBaseChats(entries) {
+  const bases = new Set()
+  for (const entry of entries) {
+    if (entry.topicId) bases.add(entry.chatId.slice(0, entry.chatId.indexOf('#')))
+  }
+  for (const base of bases) {
+    if (!store.chats.delete(base)) continue
+    store.messages.delete(base)
+    readOutboxMax.delete(base)
+    wantedChats.delete(base)
+    clearMuteExpiry(base)
+    notifier.cancel(base)
+    logger.debug({ chatId: base }, 'dialogs: replaced a chat with its topics')
+  }
+}
+
 async function refreshDialogs() {
   if (refreshInFlight || connection !== 'open') return false
   refreshInFlight = true
   try {
-    for (const entry of await tg.dialogs()) mergeDialog(entry)
+    const entries = await tg.dialogs()
+    for (const entry of entries) mergeDialog(entry)
+    pruneSupersededBaseChats(entries)
     store.markDirty()
     pushChats()
     pushState()

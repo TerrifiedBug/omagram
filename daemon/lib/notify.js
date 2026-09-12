@@ -21,21 +21,22 @@ function findCommand(name) {
   return hit ? join(hit, name) : ''
 }
 
-// The systemd user service inherits a minimal PATH that omits Omarchy's own
-// bin directory, so look there directly. Without the Omarchy helper the toast
-// still appears through notify-send, but clicking it cannot open the chat.
-const omarchySend = [
-  process.env.OMARCHY_PATH ? join(process.env.OMARCHY_PATH, 'bin', 'omarchy-notification-send') : '',
-  '/usr/share/omarchy/bin/omarchy-notification-send'
-].filter(Boolean).find((path) => existsSync(path)) || findCommand('omarchy-notification-send')
-
-const notifySend = findCommand('notify-send')
-const useOmarchy = !!omarchySend
-const canNotify = useOmarchy || !!notifySend
-
 function hasCommand(name) {
   return !!findCommand(name)
 }
+
+// Toasts go through plain `notify-send` with a libnotify action rather than
+// `omarchy-notification-send`, because the click has to work whichever
+// notification server is running. The Omarchy helper's `omarchy-exec-argv`
+// hint is only read by Omarchy's own notifications plugin; a bar that replaces
+// it (omapager, for one) invokes a standard action named `default` and ignores
+// the hint, which makes a hint-only toast silently unclickable.
+//
+// `-A` implies `--wait`, so the process lives until the toast is activated or
+// dismissed and prints the chosen action name on stdout. That is the "sender
+// must stay alive" part of the libnotify action contract.
+const notifySend = findCommand('notify-send')
+const canNotify = !!notifySend
 
 const soundPlayer = ['paplay', 'pw-play', 'canberra-gtk-play'].find((name) => hasCommand(name))
 const soundFile = [
@@ -48,6 +49,10 @@ export class Notifier {
     this.enabled = canNotify && process.env.OMARCHY_OMAGRAM_NO_NOTIFY !== '1'
     /** @type {Map<string, {title: string, lines: string[], timer: NodeJS.Timeout}>} */
     this.pending = new Map()
+    // One `notify-send --wait` child per visible toast, kept so opening the
+    // chat can take its toast down instead of leaving a stale one on screen.
+    /** @type {Map<string, import('node:child_process').ChildProcess>} */
+    this.live = new Map()
     if (!canNotify) logger.warn('notify: no notify-send on PATH, notifications disabled')
   }
 
@@ -97,43 +102,78 @@ export class Notifier {
     }
   }
 
-  // Drop everything still buffered — used when the user opens the chat before
-  // the coalesce window closes, so reading a chat cancels its pending toast.
+  // Drop everything still buffered and take down anything already on screen.
+  // Used when the user opens the chat, so reading it clears its toast.
   cancel(chatId) {
     const entry = this.pending.get(chatId)
-    if (!entry) return
-    clearTimeout(entry.timer)
-    this.pending.delete(chatId)
+    if (entry) {
+      clearTimeout(entry.timer)
+      this.pending.delete(chatId)
+    }
+    const child = this.live.get(chatId)
+    if (child) {
+      this.live.delete(chatId)
+      child.kill('SIGTERM')
+    }
   }
 
   cancelAll() {
     for (const chatId of [...this.pending.keys()]) this.cancel(chatId)
+    for (const chatId of [...this.live.keys()]) this.cancel(chatId)
+  }
+
+  // Open the bar panel on the chat the toast came from.
+  _activate(chatId) {
+    try {
+      const child = spawn('bash', [focusPath, String(chatId)], { stdio: 'ignore', detached: true })
+      child.on('error', (err) => logger.warn({ err, chatId }, 'notify: focus failed'))
+      child.unref()
+    } catch (err) {
+      logger.warn({ err, chatId }, 'notify: focus threw')
+    }
   }
 
   send(title, body, chatId) {
     if (!this.enabled) return
-    const args = useOmarchy
-      ? ['--app-name', 'OmaGram', '-u', 'normal', '-g', GLYPH, title, body]
-      : ['-a', 'OmaGram', '-u', 'normal', `--hint=string:omarchy-glyph:${GLYPH}`, title, body]
+    const args = [
+      '-a', 'OmaGram',
+      '-u', 'normal',
+      `--hint=string:omarchy-glyph:${GLYPH}`,
+      ...(chatId ? ['-A', 'default=Open'] : []),
+      title,
+      body
+    ]
 
-    // Clicking the toast opens the bar panel on the originating chat.
-    // omarchy-notification-send takes `--exec <program> [args...]` as argv and
-    // only after the headline and description, so the chat id needs no quoting
-    // and the flag cannot come earlier.
-    if (useOmarchy && chatId) args.push('--exec', 'bash', focusPath, String(chatId))
-
-    const command = useOmarchy ? omarchySend : notifySend
+    let child
     try {
-      const child = spawn(command, args, { stdio: 'ignore', detached: true })
-      child.on('error', (err) => logger.warn({ err }, 'notify: spawn failed'))
-      // A rejected argument list used to fail silently here, which is how the
-      // whole toast path stayed broken.
-      child.on('exit', (code) => {
-        if (code) logger.warn({ command, code }, 'notify: helper exited non-zero')
-      })
-      child.unref()
+      child = spawn(notifySend, args, { stdio: ['ignore', 'pipe', 'ignore'] })
     } catch (err) {
       logger.warn({ err }, 'notify: spawn threw')
+      return
     }
+    child.on('error', (err) => logger.warn({ err }, 'notify: spawn failed'))
+
+    if (!chatId) {
+      child.unref()
+      return
+    }
+
+    // Replace rather than stack: a second toast for the same chat supersedes
+    // the first, and the old child would otherwise sit waiting forever.
+    const previous = this.live.get(chatId)
+    if (previous) previous.kill('SIGTERM')
+    this.live.set(chatId, child)
+
+    let chosen = ''
+    child.stdout.on('data', (chunk) => { chosen += chunk.toString('utf8') })
+    child.on('exit', (code, signal) => {
+      if (this.live.get(chatId) === child) this.live.delete(chatId)
+      if (signal) return
+      if (code) {
+        logger.warn({ code }, 'notify: notify-send exited non-zero')
+        return
+      }
+      if (chosen.trim() === 'default') this._activate(chatId)
+    })
   }
 }

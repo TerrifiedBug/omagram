@@ -395,10 +395,13 @@ export class Telegram extends EventEmitter {
         throw new Error('press: unsupported button')
     }
 
+    // A game button carries no callback data; the constructor wants the `game`
+    // flag instead, and sending `data: undefined` would be rejected.
+    const isGame = type.className === 'InlineButtonTypeGame'
     const answer = await this.client.invoke(new Api.messages.GetBotCallbackAnswer({
       peer,
       msgId: Number(msgId),
-      data: type.data
+      ...(isGame ? { game: true } : { data: type.data })
     }))
     return { alert: String(answer?.message || ''), url: String(answer?.url || '') }
   }
@@ -541,10 +544,16 @@ export class Telegram extends EventEmitter {
         })
         return
       case 'UpdateNotifySettings': {
-        if (update.peer?.className !== 'NotifyPeer') return
+        const target = update.peer
+        // Per-topic settings arrive as NotifyForumTopic, which carries the
+        // group peer plus the topic's top message id.
+        const isTopic = target?.className === 'NotifyForumTopic'
+        if (!isTopic && target?.className !== 'NotifyPeer') return
         const muteUntil = update.notifySettings?.muteUntil
         this.emit('notify', {
-          chatId: chatIdOf(update.peer.peer),
+          chatId: isTopic
+            ? joinChatId(chatIdOf(target.peer), asNumber(target.topMsgId))
+            : chatIdOf(target.peer),
           muteUntil: typeof muteUntil === 'number' ? muteUntil : null
         })
         return
