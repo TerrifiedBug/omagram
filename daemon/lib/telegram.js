@@ -285,22 +285,32 @@ export class Telegram extends EventEmitter {
     const peer = await this.peer(chatId)
     const [message] = await this.client.getMessages(peer, { ids: [Number(msgId)] })
     const button = message?.replyMarkup?.rows?.[row]?.buttons?.[col]
-    if (!button) throw new Error('press: no such button')
+    const type = button?.type
+    if (!type) throw new Error('press: no such button')
 
-    if (button.className === 'KeyboardButtonUrl' || button.className === 'KeyboardButtonUrlAuth'
-      || button.className === 'KeyboardButtonWebView' || button.className === 'KeyboardButtonSimpleWebView') {
-      return { alert: '', url: String(button.url || '') }
+    switch (type.className) {
+      case 'InlineButtonTypeUrl':
+      case 'InlineButtonTypeUrlAuth':
+      case 'InlineButtonTypeWebView':
+      case 'ButtonTypeSimpleWebView':
+        return { alert: '', url: String(type.url || '') }
+      case 'InlineButtonTypeCopy':
+        return { alert: '', url: '', copy: String(type.copyText || '') }
+      case 'ButtonTypeDefault': {
+        const sent = await this.client.sendMessage(peer, { message: String(button.text || '') })
+        return { alert: '', url: '', sent }
+      }
+      case 'InlineButtonTypeCallback':
+      case 'InlineButtonTypeGame':
+        break
+      default:
+        throw new Error('press: unsupported button')
     }
-    if (button.className === 'KeyboardButton') {
-      const sent = await this.client.sendMessage(peer, { message: String(button.text || '') })
-      return { alert: '', url: '', sent }
-    }
-    if (button.className !== 'KeyboardButtonCallback') throw new Error('press: unsupported button')
 
     const answer = await this.client.invoke(new Api.messages.GetBotCallbackAnswer({
       peer,
       msgId: Number(msgId),
-      data: button.data
+      data: type.data
     }))
     return { alert: String(answer?.message || ''), url: String(answer?.url || '') }
   }

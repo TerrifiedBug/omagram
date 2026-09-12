@@ -107,18 +107,24 @@ export function isPhotoMedia(message) {
 // A bot's keyboard, flattened for the panel. Callback payloads stay in the
 // daemon: the panel presses a button by position, so binary `data` never has to
 // cross the wire or be trusted coming back.
+//
+// teleproto splits a button into the button (text, style) and its `type`, so an
+// inline button's behaviour lives in `button.type.className`.
 function buttonOf(button) {
   const text = String(button?.text || '')
-  switch (button?.className) {
-    case 'KeyboardButtonCallback':
+  const type = button?.type
+  switch (type?.className) {
+    case 'InlineButtonTypeCallback':
+    case 'InlineButtonTypeGame':
       return { text, kind: 'callback', url: '' }
-    case 'KeyboardButtonUrl':
-    case 'KeyboardButtonUrlAuth':
-      return { text, kind: 'url', url: String(button.url || '') }
-    case 'KeyboardButtonWebView':
-    case 'KeyboardButtonSimpleWebView':
-      return { text, kind: 'url', url: String(button.url || '') }
-    case 'KeyboardButton':
+    case 'InlineButtonTypeUrl':
+    case 'InlineButtonTypeUrlAuth':
+    case 'InlineButtonTypeWebView':
+    case 'ButtonTypeSimpleWebView':
+      return { text, kind: 'url', url: String(type.url || '') }
+    case 'InlineButtonTypeCopy':
+      return { text, kind: 'copy', url: String(type.copyText || '') }
+    case 'ButtonTypeDefault':
       // Plain reply-keyboard key: pressing it sends its label as a message.
       return { text, kind: 'text', url: '' }
     default:
