@@ -110,16 +110,39 @@ export class Notifier {
       clearTimeout(entry.timer)
       this.pending.delete(chatId)
     }
-    const child = this.live.get(chatId)
-    if (child) {
-      this.live.delete(chatId)
-      child.kill('SIGTERM')
-    }
+    this._takeDown(chatId)
+  }
+
+  // Close a visible toast through the server. Killing the waiting notify-send
+  // would not do it: the toast outlives its sender, so it would stay on screen
+  // with a dead action, which is the no-op click this path exists to avoid.
+  _takeDown(chatId) {
+    const toast = this.live.get(chatId)
+    if (!toast) return
+    this.live.delete(chatId)
+    if (toast.id) this._close(toast.id)
+    else toast.child.kill('SIGTERM')
   }
 
   cancelAll() {
     for (const chatId of [...this.pending.keys()]) this.cancel(chatId)
     for (const chatId of [...this.live.keys()]) this.cancel(chatId)
+  }
+
+  _close(id) {
+    try {
+      const child = spawn('busctl', [
+        '--user', 'call',
+        'org.freedesktop.Notifications',
+        '/org/freedesktop/Notifications',
+        'org.freedesktop.Notifications',
+        'CloseNotification', 'u', String(id)
+      ], { stdio: 'ignore', detached: true })
+      child.on('error', (err) => logger.debug({ err, id }, 'notify: close failed'))
+      child.unref()
+    } catch (err) {
+      logger.debug({ err, id }, 'notify: close threw')
+    }
   }
 
   // Open the bar panel on the chat the toast came from.
@@ -135,11 +158,17 @@ export class Notifier {
 
   send(title, body, chatId) {
     if (!this.enabled) return
+    // Supersede rather than stack. The old toast is closed through the server
+    // rather than replaced with `-r`: reusing the id would leave two waiters
+    // listening for the same notification, and both would fire on one click.
+    if (chatId) this._takeDown(chatId)
     const args = [
       '-a', 'OmaGram',
       '-u', 'normal',
       `--hint=string:omarchy-glyph:${GLYPH}`,
-      ...(chatId ? ['-A', 'default=Open'] : []),
+      // `-p` prints the notification id first; `-A` implies --wait and prints
+      // the chosen action on activation. Both arrive on stdout, in that order.
+      ...(chatId ? ['-p', '-A', 'default=Open'] : []),
       title,
       body
     ]
@@ -158,22 +187,26 @@ export class Notifier {
       return
     }
 
-    // Replace rather than stack: a second toast for the same chat supersedes
-    // the first, and the old child would otherwise sit waiting forever.
-    const previous = this.live.get(chatId)
-    if (previous) previous.kill('SIGTERM')
-    this.live.set(chatId, child)
+    const toast = { child, id: 0 }
+    this.live.set(chatId, toast)
 
-    let chosen = ''
-    child.stdout.on('data', (chunk) => { chosen += chunk.toString('utf8') })
+    let out = ''
+    let activated = false
+    child.stdout.on('data', (chunk) => {
+      out += chunk.toString('utf8')
+      for (const line of out.split('\n').map((l) => l.trim()).filter(Boolean)) {
+        if (/^\d+$/.test(line)) toast.id = Number(line)
+        else if (line === 'default') activated = true
+      }
+    })
     child.on('exit', (code, signal) => {
-      if (this.live.get(chatId) === child) this.live.delete(chatId)
+      if (this.live.get(chatId) === toast) this.live.delete(chatId)
       if (signal) return
       if (code) {
         logger.warn({ code }, 'notify: notify-send exited non-zero')
         return
       }
-      if (chosen.trim() === 'default') this._activate(chatId)
+      if (activated) this._activate(chatId)
     })
   }
 }
