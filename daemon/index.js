@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync, unlinkSync } from 'node:fs'
+import { chmodSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, unlinkSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import QRCode from 'qrcode'
@@ -205,16 +205,32 @@ const avatarsWanted = new Set()
  * remembered as failures: a chat with no photo must not be retried per
  * message.
  */
+function avatarIfUsable(target) {
+  try {
+    return statSync(target).size > 0 ? target : ''
+  } catch {
+    return ''
+  }
+}
+
 function ensureAvatar(chatId) {
   const target = avatarPathFor(chatId)
-  if (existsSync(target)) return target
+  const ready = avatarIfUsable(target)
+  if (ready) return ready
   if (avatarsWanted.has(chatId) || connection !== 'open') return ''
   avatarsWanted.add(chatId)
   tg.avatar(chatId, target)
-    .then((path) => {
-      if (path) chmodSync(path, 0o600)
+    .then(() => {
+      // A chat with no photo still leaves the output file behind, empty.
+      // Passing that path as an icon shows a broken image, so drop it; the
+      // chat stays in avatarsWanted so it is not retried every message.
+      if (avatarIfUsable(target)) chmodSync(target, 0o600)
+      else removeFile(target)
     })
-    .catch((err) => logger.debug({ err, chatId }, 'avatar: download failed'))
+    .catch((err) => {
+      removeFile(target)
+      logger.debug({ err, chatId }, 'avatar: download failed')
+    })
   return ''
 }
 
