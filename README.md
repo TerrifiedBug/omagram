@@ -77,6 +77,7 @@ The command asks for the code sent through the Telegram app or by SMS. It also a
 | Refresh | Use the refresh button or press `r` |
 | Open a chat | Click it or press `Enter` |
 | Reply | Type a message and press `Enter` |
+| Use a bot keyboard | Click a button under the bot message |
 | Return to the chat list | Press `Escape` |
 | Close the panel | Press `Escape` from the chat list |
 | Open or focus Telegram Desktop | Right-click the bar icon or use the ⧉ button |
@@ -85,6 +86,10 @@ The command asks for the code sent through the Telegram app or by SMS. It also a
 | View a downloaded photo | Click its preview |
 
 Opening a chat sends a read receipt to Telegram. Messages that arrive while that conversation is open are marked read as they arrive.
+
+Forum supergroups appear as one chat per topic, with the group name shown alongside the topic name. The group itself does not get a separate row. Unread counts, mutes, message history, replies, and read receipts are tracked per topic.
+
+Bot keyboards appear as button rows under the message. Callback and game buttons run through the daemon. A bot often answers a callback by editing the same message, which the panel updates in place. Link buttons open in the browser. Copy buttons send their text to `wl-copy`, while plain reply-keyboard buttons send their label as a message. Unsupported buttons, including payments and inline switches, stay visible but disabled.
 
 ## CLI
 
@@ -112,7 +117,7 @@ The `omarchy-omagram` dispatcher supports these commands:
 | `restart` | Restart `omarchy-omagram.service` |
 | `logs [-f]` | Show the latest 100 daemon journal lines, optionally following them |
 
-Telegram chat IDs are decimal strings. User IDs are positive, group IDs are negative, and channels or supergroups use the `-100...` form. Get them from `omarchy-omagram chats`.
+Telegram chat IDs for ordinary chats are decimal strings. User IDs are positive, group IDs are negative, and channels or supergroups use the `-100...` form. A forum topic adds `#<topicId>` to its group ID, such as `-1004490104934#2`; General is always topic `1`. Get the full chat ID from `omarchy-omagram chats`.
 
 `omarchy-omagram ctl` calls the same raw client as `omarchy-omagram-ctl`. It accepts:
 
@@ -125,6 +130,7 @@ Telegram chat IDs are decimal strings. User IDs are positive, group IDs are nega
 | `send <chatId> <text...>` | Send a text message |
 | `read <chatId>` | Mark a chat as read |
 | `focus <chatId>` | Select a chat in open bar panels |
+| `press <chatId> <id> <row> <col>` | Press a bot keyboard button by position |
 | `login` | Start QR login |
 | `loginPhone <phone>` | Start phone login |
 | `code` | Read one login code from standard input |

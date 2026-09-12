@@ -19,3 +19,9 @@ test("chatTitle falls back to the Telegram peer kind", () => {
   assert.equal(Model.chatTitle({ name: "", kind: "group" }), "Group")
   assert.equal(Model.chatTitle({ name: "", kind: "channel" }), "Channel")
 })
+
+test("chatSubtitle identifies a forum topic's group", () => {
+  assert.equal(Model.chatSubtitle({ name: "General", group: "Release crew", topicId: 1 }), "Release crew")
+  assert.equal(Model.chatSubtitle({ name: "Alice", group: "", kind: "user" }), "")
+  assert.equal(Model.chatSubtitle({ name: "Older chat", kind: "user" }), "")
+})

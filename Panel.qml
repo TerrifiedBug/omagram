@@ -444,7 +444,7 @@ Panel {
               text: {
                 if (root.statusLine.length > 0) return root.statusLine
                 if (root.client && root.client.lastError.length > 0) return root.client.lastError
-                if (root.view === "chat") return ""
+                if (root.view === "chat") return Model.chatSubtitle(root.activeChat)
                 if (root.needsLogin) return root.hasQr ? "Scan the QR code" : ""
                 var unread = root.client ? root.client.unread : 0
                 return unread > 0 ? unread + " unread" : ""
@@ -743,6 +743,17 @@ Panel {
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.body
                   font.bold: (chatRow.modelData.unread || 0) > 0
+                  elide: Text.ElideRight
+                }
+
+                Text {
+                  textFormat: Text.PlainText
+                  width: parent.width
+                  visible: text.length > 0
+                  text: Model.chatSubtitle(chatRow.modelData)
+                  color: root.secondaryForeground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
                   elide: Text.ElideRight
                 }
 

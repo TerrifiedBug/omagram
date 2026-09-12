@@ -76,6 +76,11 @@ function chatTitle(chat) {
   return chat.name || chatFallbackName(chat)
 }
 
+function chatSubtitle(chat) {
+  if (!chat) return ""
+  return chat.group || ""
+}
+
 // The preview line under a chat name: "You: ..." for outgoing, "Name: ..." in
 // groups, bare text in a one-to-one chat.
 function chatPreview(chat) {
@@ -221,6 +226,7 @@ if (typeof module !== "undefined") {
     isPhotoPlaceholder: isPhotoPlaceholder,
     chatFallbackName: chatFallbackName,
     chatTitle: chatTitle,
+    chatSubtitle: chatSubtitle,
     chatPreview: chatPreview,
     statusGlyph: statusGlyph,
     statusIsRead: statusIsRead,
