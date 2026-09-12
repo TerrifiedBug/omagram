@@ -191,6 +191,7 @@ The state and media directories use mode `0700`. `OMARCHY_OMAGRAM_STATE`, `OMARC
 - Opening a chat sends a real read receipt. It has the same effect as opening that chat in another Telegram client.
 - The daemon downloads only photos from chats you have opened. Each download is capped at 12 MiB. Other media stays as a text placeholder for the full client.
 - Muted and archived chats do not send desktop notifications and do not count toward the bar badge. A timed mute begins counting again after it expires.
+- Clicking a notification opens the chat. That uses a standard libnotify action, so the toast stays live while its sender process does, and a toast already on screen is not withdrawn when you read the chat elsewhere. It goes when you dismiss it or it expires.
 - Plugins run inside `omarchy-shell` without a sandbox. OmaGram keeps MTProto and network access in the separate Node.js daemon; the QML plugin exchanges JSON with that daemon over its Unix socket.
 
 ## Environment variables
