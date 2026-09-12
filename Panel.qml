@@ -497,12 +497,12 @@ Panel {
               wrapMode: Text.WordWrap
             }
 
-            PanelActionButton {
+            Button {
               anchors.horizontalCenter: parent.horizontalCenter
-              iconText: "\uf35d"
-              tooltipText: "Open my.telegram.org"
+              text: "Open my.telegram.org"
               foreground: root.foreground
               fontFamily: root.fontFamily
+              bordered: true
               onClicked: Qt.openUrlExternally("https://my.telegram.org/apps")
             }
 
