@@ -19,7 +19,6 @@ RestrictSUIDSGID=yes
 NoNewPrivileges=yes
 MemoryHigh=400M
 Environment=NODE_ENV=production
-Environment=NODE_OPTIONS=--disable-warning=ExperimentalWarning
 
 [Install]
 WantedBy=graphical-session.target

@@ -111,7 +111,11 @@ async function buildRequest() {
   }
 }
 
-const request = await buildRequest()
+// The daemon echoes a command's `id` on its reply and broadcasts unrelated
+// frames to every client, so `send` used to print the resulting `message`
+// broadcast instead of its own ack. Correlate on the id.
+const REQUEST_ID = 1
+const request = { ...(await buildRequest()), id: REQUEST_ID }
 const socket = net.connect(socketPath)
 let buffer = ''
 let settled = false
@@ -143,7 +147,12 @@ socket.on('data', (chunk) => {
 
     // Every client gets a `state` push on connect. For `status` that *is* the
     // answer; for anything else it is noise to skip.
-    if (payload.t === 'state' && command !== 'status') continue
+    if (payload.t === 'state') {
+      if (command !== 'status') continue
+    } else if (payload.id !== REQUEST_ID) {
+      // A broadcast meant for the panels, not an answer to this command.
+      continue
+    }
 
     settled = true
     clearTimeout(timeout)

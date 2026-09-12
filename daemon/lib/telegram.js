@@ -261,7 +261,9 @@ export class Telegram extends EventEmitter {
         topSender: d.isGroup && d.message ? displayName(d.message.sender) : ''
       }
 
-      if (!d.entity?.forum) {
+      // `forum` is the supergroup flag; a private chat with a forum-enabled bot
+      // carries `botForumView` instead, and takes the same topic calls.
+      if (!d.entity?.forum && !d.entity?.botForumView) {
         out.push(base)
         continue
       }
@@ -401,12 +403,24 @@ export class Telegram extends EventEmitter {
     return { alert: String(answer?.message || ''), url: String(answer?.url || '') }
   }
 
-  async markRead(chatId) {
+  /**
+   * `client.markAsRead` forwards `topMsgId` only to `ReadMentions`; its history
+   * read is whole-channel `channels.readHistory`, so using it on a topic row
+   * would clear every other topic in the forum too. A topic is a reply thread,
+   * and `messages.readDiscussion` is the call that reads one.
+   */
+  async markRead(chatId, readMaxId = 0) {
     const { topicId } = splitChatId(chatId)
     const peer = await this.peer(chatId)
-    // Without topMsgId this would clear every topic in the forum, not the one
-    // the user actually opened.
-    await this.client.markAsRead(peer, undefined, topicId ? { topMsgId: topicId } : undefined)
+    if (!topicId) {
+      await this.client.markAsRead(peer)
+      return
+    }
+    await this.client.invoke(new Api.messages.ReadDiscussion({
+      peer,
+      msgId: topicId,
+      readMaxId: Number(readMaxId) || 0
+    }))
   }
 
   /**
@@ -487,7 +501,9 @@ export class Telegram extends EventEmitter {
         Api.UpdateReadChannelOutbox,
         Api.UpdateNotifySettings,
         Api.UpdateDialogPinned,
-        Api.UpdateFolderPeers
+        Api.UpdateFolderPeers,
+        Api.UpdateReadChannelDiscussionInbox,
+        Api.UpdateReadChannelDiscussionOutbox
       ]
     }))
 
@@ -508,6 +524,21 @@ export class Telegram extends EventEmitter {
         return
       case 'UpdateReadChannelOutbox':
         this.emit('readOutbox', { chatId: channelId(update.channelId), maxId: asNumber(update.maxId) })
+        return
+      // A forum topic's reads arrive as discussion updates, not channel ones.
+      // Telegram sends no remaining count here, so the panel's own zeroing on
+      // open is what clears the badge; this keeps other clients in sync.
+      case 'UpdateReadChannelDiscussionInbox':
+        this.emit('readInbox', {
+          chatId: joinChatId(channelId(update.channelId), asNumber(update.topMsgId)),
+          unread: 0
+        })
+        return
+      case 'UpdateReadChannelDiscussionOutbox':
+        this.emit('readOutbox', {
+          chatId: joinChatId(channelId(update.channelId), asNumber(update.topMsgId)),
+          maxId: asNumber(update.readMaxId)
+        })
         return
       case 'UpdateNotifySettings': {
         if (update.peer?.className !== 'NotifyPeer') return

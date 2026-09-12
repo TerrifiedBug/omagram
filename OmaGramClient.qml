@@ -209,7 +209,10 @@ Item {
         root.me = frame.me || null
         root.lastError = frame.lastError || ""
         if (frame.chats !== undefined) root.setChats(frame.chats || [])
-        if (root.linked) root.pendingLogin = false
+        // Clear the pending flag once the daemon is done trying, not only on
+        // success: a rejected api_id or a closed pairing window would otherwise
+        // leave the panel stuck on "Getting QR code…".
+        if (root.linked || root.hasQr || root.pairingStopped) root.pendingLogin = false
         break
 
       case "chats":

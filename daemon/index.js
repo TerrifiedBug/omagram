@@ -624,8 +624,11 @@ async function markRead(chatId) {
   pushChats()
   pushState()
   if (connection !== 'open') return
+  // A topic read needs the id to read up to; a whole-chat read does not.
+  const list = store.messages.get(chatId) || []
+  const newest = list.length ? Number(list[list.length - 1].id) || 0 : 0
   try {
-    await tg.markRead(chatId)
+    await tg.markRead(chatId, newest)
   } catch (err) {
     if (!tg.classifyError(err)) logger.debug({ err, chatId }, 'read receipts failed')
   }
@@ -645,9 +648,9 @@ async function loadHistory(chatId, limit) {
   }
 }
 
-function replyMessages(chatId, limit, reply) {
+function replyMessages(chatId, limit, reply, id) {
   const list = store.messageList(chatId, limit)
-  reply({ t: 'messages', chatId, chat: store.chat(chatId), messages: list })
+  reply({ t: 'messages', id, chatId, chat: store.chat(chatId), messages: list })
   for (const message of list) {
     if (!message.imagePath && message.type === 'photo') media.enqueue(chatId, message)
   }
@@ -665,7 +668,7 @@ async function handleCommand(payload, reply) {
       return
 
     case 'chats':
-      reply({ t: 'chats', chats: store.chatList(payload.limit || 60), unread: store.totalUnread() })
+      reply({ t: 'chats', id, chats: store.chatList(payload.limit || 60), unread: store.totalUnread() })
       return
 
     case 'refresh': {
@@ -680,9 +683,9 @@ async function handleCommand(payload, reply) {
       if (chatId) {
         wantedChats.add(chatId)
         await loadHistory(chatId, messageLimit)
-        replyMessages(chatId, messageLimit, reply)
+        replyMessages(chatId, messageLimit, reply, id)
       } else {
-        reply({ t: 'chats', chats, unread })
+        reply({ t: 'chats', id, chats, unread })
       }
       return
     }
@@ -693,7 +696,7 @@ async function handleCommand(payload, reply) {
       const limit = payload.limit || 60
       wantedChats.add(chatId)
       if ((store.messages.get(chatId) || []).length < limit) await loadHistory(chatId, limit)
-      replyMessages(chatId, limit, reply)
+      replyMessages(chatId, limit, reply, id)
       return
     }
 
@@ -770,8 +773,10 @@ async function handleCommand(payload, reply) {
     }
 
     case 'loginPhone': {
-      const phone = String(payload.phone || '').replace(/[^\d+]/g, '')
-      if (!phone) throw new Error('loginPhone: phone number required')
+      // Rejected rather than scrubbed: silently deleting characters would turn
+      // a typo into a call to a different number.
+      const phone = String(payload.phone || '').trim()
+      if (!/^\+?\d{5,20}$/.test(phone)) throw new Error('loginPhone: phone number required')
       const { already } = await startLogin('phone', phone)
       reply({ t: 'ack', id, ok: true, ...(already ? { already: true } : {}) })
       return
@@ -921,6 +926,10 @@ async function main() {
   media.getClient = () => tg.client
   media.resolvePeer = (chatId) => tg.peer(chatId)
   media.onReady = (chatId, message) => {
+    // download() hands back a fresh {id, imagePath}, so the stored message has
+    // to be updated by hand or the panel loses the photo on the next reload.
+    const stored = store.findMessage(chatId, message.id)
+    if (stored) stored.imagePath = message.imagePath || ''
     store.markDirty()
     bus.broadcast({ t: 'messageMedia', chatId, id: message.id, imagePath: message.imagePath || '' })
   }

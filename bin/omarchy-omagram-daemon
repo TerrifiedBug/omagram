@@ -26,7 +26,14 @@ if ((print_qr)); then
   export OMARCHY_OMAGRAM_PRINT_QR=1
 fi
 
-export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--disable-warning=ExperimentalWarning"
+# teleproto pulls in node-localstorage, which prints an ExperimentalWarning on
+# every start. `--disable-warning` only exists from Node 22, and an unknown
+# option makes Node exit, so the flag is gated on the running version rather
+# than set unconditionally.
+node_major=$("$(tg_node)" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)
+if ((node_major >= 22)); then
+  export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--disable-warning=ExperimentalWarning"
+fi
 
 cd "$TG_DAEMON_DIR"
 exec "$(tg_node)" index.js
