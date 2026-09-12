@@ -441,6 +441,17 @@ export class Telegram extends EventEmitter {
     return GENERAL_TOPIC
   }
 
+  /**
+   * The chat's profile photo, written to `target`. A real Telegram
+   * notification shows the sender's avatar rather than the app logo, and the
+   * server takes it as a file path.
+   */
+  async avatar(chatId, target) {
+    const peer = await this.peer(chatId)
+    const written = await this.client.downloadProfilePhoto(peer, { outputFile: target })
+    return written ? target : ''
+  }
+
   async typing(chatId, composing) {
     try {
       const { topicId } = splitChatId(chatId)

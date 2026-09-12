@@ -15,6 +15,12 @@ export function mediaPathFor(id, ext = 'jpg') {
   return join(mediaDir, `${safePart(id, 'media')}.${safePart(ext, 'jpg')}`)
 }
 
+// Avatars live beside the photo cache under a distinct prefix so the photo
+// lookups, which key on message id, can never collide with them.
+export function avatarPathFor(chatId) {
+  return join(mediaDir, `avatar-${safePart(chatId, 'chat')}.jpg`)
+}
+
 export function existingMediaPath(message) {
   if (!message?.id) return ''
   if (message.imagePath && existsSync(message.imagePath)) return message.imagePath

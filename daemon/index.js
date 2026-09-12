@@ -1,4 +1,4 @@
-import { chmodSync, readdirSync, readFileSync, rmSync, writeFileSync, unlinkSync } from 'node:fs'
+import { chmodSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync, unlinkSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import QRCode from 'qrcode'
@@ -9,7 +9,7 @@ import { Store } from './lib/store.js'
 import { Notifier } from './lib/notify.js'
 import { Bus } from './lib/server.js'
 import { chatIdOf, displayName, isPhotoMedia, isService, messageButtons, messageText, messageType } from './lib/message.js'
-import { existingMediaPath, MediaCache } from './lib/media.js'
+import { avatarPathFor, existingMediaPath, MediaCache } from './lib/media.js'
 import { Telegram } from './lib/telegram.js'
 import {
   applyChatNotificationPreferences,
@@ -197,6 +197,27 @@ function flatten(chatId, raw, senderName) {
   return message
 }
 
+const avatarsWanted = new Set()
+
+/**
+ * Fetch a chat's profile photo once, so its toasts carry the sender's avatar
+ * like the desktop client does instead of the OmaGram app icon. Failures are
+ * remembered as failures: a chat with no photo must not be retried per
+ * message.
+ */
+function ensureAvatar(chatId) {
+  const target = avatarPathFor(chatId)
+  if (existsSync(target)) return target
+  if (avatarsWanted.has(chatId) || connection !== 'open') return ''
+  avatarsWanted.add(chatId)
+  tg.avatar(chatId, target)
+    .then((path) => {
+      if (path) chmodSync(path, 0o600)
+    })
+    .catch((err) => logger.debug({ err, chatId }, 'avatar: download failed'))
+  return ''
+}
+
 function notifyFor(chatId, chat, message) {
   const isGroup = chat.kind === 'group'
   const title = isGroup || chat.kind === 'channel' ? (chat.name || 'Telegram') : (message.senderName || chat.name)
@@ -206,6 +227,9 @@ function notifyFor(chatId, chat, message) {
     chatId,
     title,
     body,
+    // Read at flush time, so an avatar that lands during the coalesce window
+    // is still used.
+    icon: () => ensureAvatar(chatId),
     shouldNotify: () => shouldNotifyChat(store.chat(chatId))
   })
 }

@@ -80,16 +80,17 @@ export class Notifier {
   // Called once per incoming message. Preference checks happen at flush so a
   // message that auto-unarchives within the coalesce window can still alert.
   // Pass shouldNotify as a live predicate over store state.
-  queue({ chatId, title, body, shouldNotify }) {
+  queue({ chatId, title, body, icon, shouldNotify }) {
     if (!this.enabled) return
     const entry = this.pending.get(chatId)
     if (entry) {
       entry.title = title
       entry.lines.push(body)
       if (shouldNotify) entry.shouldNotify = shouldNotify
+      if (icon) entry.icon = icon
       return
     }
-    const fresh = { title, lines: [body], timer: null, shouldNotify }
+    const fresh = { title, lines: [body], timer: null, icon, shouldNotify }
     fresh.timer = setTimeout(() => this.flush(chatId), COALESCE_MS)
     fresh.timer.unref?.()
     this.pending.set(chatId, fresh)
@@ -106,7 +107,8 @@ export class Notifier {
     const body = entry.lines.length > 1
       ? `${entry.lines[entry.lines.length - 1]}\n(+${entry.lines.length - 1} more)`
       : entry.lines[0]
-    this.send(entry.title, body, chatId)
+    const icon = typeof entry.icon === 'function' ? entry.icon() : ''
+    this.send(entry.title, body, chatId, icon)
     this.playSound()
   }
 
@@ -152,13 +154,19 @@ export class Notifier {
     }
   }
 
-  send(title, body, chatId) {
+  send(title, body, chatId, icon) {
     if (!this.enabled) return
     const args = [
       '-a', 'OmaGram',
       '-u', 'normal',
       `--hint=string:omarchy-glyph:${GLYPH}`,
-      ...(iconName ? ['-i', iconName] : []),
+      // Two different slots, and mixing them up is why these toasts looked
+      // nothing like the desktop client's. `-n` is the application's icon;
+      // `-i` is this notification's picture, which for a message is the
+      // sender's avatar. Falling back to the app icon there keeps a chat with
+      // no photo from showing a blank.
+      ...(iconName ? ['-n', iconName] : []),
+      ...(icon ? ['-i', icon] : iconName ? ['-i', iconName] : []),
       // `-A` implies --wait and prints the chosen action on stdout, so this
       // process is the live sender the action contract needs. It exits when
       // the toast is clicked, dismissed or expires.
