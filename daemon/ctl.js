@@ -16,6 +16,8 @@ const USAGE = `Usage: omarchy-omagram-ctl <command> [args]
   send <chatId> <text...>   send a text message
   read <chatId>             mark a chat read
   focus <chatId>            select that chat in every open bar panel
+  press <chatId> <id> <row> <col>
+                            press a bot keyboard button by position
   login                     start QR login (stops after 5 minutes)
   loginPhone <phone>        start a phone + code login
   code                      one login code, read from stdin
@@ -71,6 +73,15 @@ async function buildRequest() {
     case 'read':
       if (!args[0]) fail('read: chatId required')
       return { t: 'read', chatId: args[0] }
+    case 'press':
+      if (args.length < 2) fail('press: chatId and message id required')
+      return {
+        t: 'press',
+        chatId: args[0],
+        id: args[1],
+        row: Number(args[2]) || 0,
+        col: Number(args[3]) || 0
+      }
     case 'focus':
       if (!args[0]) fail('focus: chatId required')
       return { t: 'focus', chatId: args[0] }

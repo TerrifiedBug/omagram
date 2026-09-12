@@ -273,6 +273,38 @@ export class Telegram extends EventEmitter {
     return this.client.sendMessage(peer, { message: text })
   }
 
+  /**
+   * Press a bot keyboard button by position. The callback payload is read off
+   * the live message rather than taken from the caller, so the panel cannot be
+   * tricked into submitting data of its own.
+   *
+   * Returns `{alert, url}`: `alert` is the bot's toast text, `url` a link the
+   * caller should open instead.
+   */
+  async pressButton(chatId, msgId, row, col) {
+    const peer = await this.peer(chatId)
+    const [message] = await this.client.getMessages(peer, { ids: [Number(msgId)] })
+    const button = message?.replyMarkup?.rows?.[row]?.buttons?.[col]
+    if (!button) throw new Error('press: no such button')
+
+    if (button.className === 'KeyboardButtonUrl' || button.className === 'KeyboardButtonUrlAuth'
+      || button.className === 'KeyboardButtonWebView' || button.className === 'KeyboardButtonSimpleWebView') {
+      return { alert: '', url: String(button.url || '') }
+    }
+    if (button.className === 'KeyboardButton') {
+      const sent = await this.client.sendMessage(peer, { message: String(button.text || '') })
+      return { alert: '', url: '', sent }
+    }
+    if (button.className !== 'KeyboardButtonCallback') throw new Error('press: unsupported button')
+
+    const answer = await this.client.invoke(new Api.messages.GetBotCallbackAnswer({
+      peer,
+      msgId: Number(msgId),
+      data: button.data
+    }))
+    return { alert: String(answer?.message || ''), url: String(answer?.url || '') }
+  }
+
   async markRead(chatId) {
     const peer = await this.peer(chatId)
     await this.client.markAsRead(peer)
@@ -312,7 +344,7 @@ export class Telegram extends EventEmitter {
     this.handlersBound = true
     const client = this.client
 
-    client.addEventHandler(async (event) => {
+    const deliver = async (event, name) => {
       const raw = event?.message
       if (!raw || isService(raw)) return
       const chatId = event.chatId ? event.chatId.toString() : chatIdOf(raw.peerId)
@@ -323,8 +355,13 @@ export class Telegram extends EventEmitter {
       }
       const inputPeer = await raw.getInputChat().catch(() => null)
       if (inputPeer) this.peers.set(chatId, inputPeer)
-      this.emit('message', { chatId, raw, senderName })
-    }, new events.NewMessage({}))
+      this.emit(name, { chatId, raw, senderName })
+    }
+
+    client.addEventHandler((event) => deliver(event, 'message'), new events.NewMessage({}))
+    // A bot answering a callback usually edits its own message in place, so
+    // without this the buttons the user just pressed would never change.
+    client.addEventHandler((event) => deliver(event, 'edited'), new events.EditedMessage({}))
 
     client.addEventHandler((update) => this._onRaw(update), new events.Raw({
       types: [

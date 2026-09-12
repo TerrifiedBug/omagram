@@ -104,6 +104,39 @@ export function isPhotoMedia(message) {
   return message?.media?.className === 'MessageMediaPhoto'
 }
 
+// A bot's keyboard, flattened for the panel. Callback payloads stay in the
+// daemon: the panel presses a button by position, so binary `data` never has to
+// cross the wire or be trusted coming back.
+function buttonOf(button) {
+  const text = String(button?.text || '')
+  switch (button?.className) {
+    case 'KeyboardButtonCallback':
+      return { text, kind: 'callback', url: '' }
+    case 'KeyboardButtonUrl':
+    case 'KeyboardButtonUrlAuth':
+      return { text, kind: 'url', url: String(button.url || '') }
+    case 'KeyboardButtonWebView':
+    case 'KeyboardButtonSimpleWebView':
+      return { text, kind: 'url', url: String(button.url || '') }
+    case 'KeyboardButton':
+      // Plain reply-keyboard key: pressing it sends its label as a message.
+      return { text, kind: 'text', url: '' }
+    default:
+      return { text, kind: 'unsupported', url: '' }
+  }
+}
+
+export function messageButtons(message) {
+  const markup = message?.replyMarkup
+  if (markup?.className !== 'ReplyInlineMarkup' && markup?.className !== 'ReplyKeyboardMarkup') return []
+  const rows = []
+  for (const row of markup.rows || []) {
+    const buttons = (row?.buttons || []).map(buttonOf).filter((button) => button.text)
+    if (buttons.length) rows.push(buttons)
+  }
+  return rows
+}
+
 export function displayName(entity) {
   if (!entity) return ''
   if (entity.className === 'User') {

@@ -8,7 +8,7 @@ import { logger } from './lib/logger.js'
 import { Store } from './lib/store.js'
 import { Notifier } from './lib/notify.js'
 import { Bus } from './lib/server.js'
-import { chatIdOf, displayName, isPhotoMedia, isService, messageText, messageType } from './lib/message.js'
+import { chatIdOf, displayName, isPhotoMedia, isService, messageButtons, messageText, messageType } from './lib/message.js'
 import { existingMediaPath, MediaCache } from './lib/media.js'
 import { Telegram } from './lib/telegram.js'
 import {
@@ -190,7 +190,8 @@ function flatten(chatId, raw, senderName) {
     type: messageType(raw),
     senderName: fromMe ? (store.me?.name || 'You') : senderName,
     status: fromMe ? (Number(id) <= (readOutboxMax.get(chatId) || 0) ? MSG_READ : MSG_SENT) : 0,
-    imagePath: ''
+    imagePath: '',
+    buttons: messageButtons(raw)
   }
   message.imagePath = existingMediaPath(message)
   return message
@@ -212,8 +213,9 @@ function notifyFor(chatId, chat, message) {
 /**
  * Store a message and, when it arrived live, tell the panels and the user.
  * History backfill passes `live: false`: it must not toast or bump unread.
+ * An edit is live but not new, so it updates the panel without alerting.
  */
-function ingest(chatId, raw, senderName, live) {
+function ingest(chatId, raw, senderName, live, edited = false) {
   if (isService(raw)) return null
 
   const message = flatten(chatId, raw, senderName)
@@ -226,7 +228,7 @@ function ingest(chatId, raw, senderName, live) {
     'ingest'
   )
 
-  if (live && !existed && !message.fromMe) {
+  if (live && !edited && !existed && !message.fromMe) {
     // Telegram sends authoritative counts through readInbox, so a plain
     // increment here is enough and self-corrects.
     store.bumpUnread(chatId)
@@ -567,6 +569,10 @@ function wireTelegram() {
     if (store.totalUnread() !== before) pushState()
   })
 
+  tg.on('edited', ({ chatId, raw, senderName }) => {
+    if (ingest(chatId, raw, senderName, true, true)) pushChatsSoon()
+  })
+
   tg.on('readInbox', ({ chatId, unread }) => {
     store.setUnread(chatId, unread)
     notifier.cancel(chatId)
@@ -721,6 +727,19 @@ async function handleCommand(payload, reply) {
       }
       await tg.typing(String(payload.chatId), payload.state !== 'paused')
       reply({ t: 'ack', id, ok: true })
+      return
+    }
+
+    case 'press': {
+      if (!payload.chatId) throw new Error('press: chatId required')
+      if (!payload.id) throw new Error('press: message id required')
+      if (connection !== 'open') throw new Error('press: not connected to Telegram')
+      const chatId = String(payload.chatId)
+      const row = Number(payload.row) || 0
+      const col = Number(payload.col) || 0
+      const result = await tg.pressButton(chatId, payload.id, row, col)
+      if (result.sent) ingest(chatId, result.sent, store.me?.name || 'You', true)
+      reply({ t: 'ack', id, ok: true, chatId, alert: result.alert, url: result.url })
       return
     }
 
