@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, globSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { logger } from './logger.js'
@@ -11,6 +11,13 @@ const GLYPH = '\uf2c6'
 // Messages arrive in bursts. Holding a chat's notification briefly lets a
 // three-message burst land as one toast instead of three stacked ones.
 const COALESCE_MS = 1200
+
+// Without an explicit app icon a notification server is left guessing from the
+// app name, and "OmaGram" matches nothing, so it picks something unrelated.
+// Name the Telegram icon instead: both forms ship with Telegram Desktop and
+// with the common icon themes, and a server that resolves neither falls back
+// to the glyph hint above.
+const ICON_NAMES = ['org.telegram.desktop', 'telegram']
 
 const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const focusPath = join(pluginRoot, 'bin', 'omarchy-omagram-focus')
@@ -37,6 +44,24 @@ function hasCommand(name) {
 // must stay alive" part of the libnotify action contract.
 const notifySend = findCommand('notify-send')
 const canNotify = !!notifySend
+
+// Pick a name the machine actually has, so the server is never handed a name
+// it cannot resolve. Themed lookups are per-size, so a glob over the theme
+// roots is the cheap way to answer "is this icon installed at all".
+const iconName = ICON_NAMES.find((name) => [
+  '/usr/share/icons',
+  '/usr/share/pixmaps',
+  join(process.env.HOME || '', '.local/share/icons')
+].some((root) => {
+  for (const ext of ['png', 'svg', 'xpm']) {
+    if (existsSync(join(root, `${name}.${ext}`))) return true
+  }
+  try {
+    return globSync(join(root, '*', '*', 'apps', `${name}.*`)).length > 0
+  } catch {
+    return false
+  }
+})) || ''
 
 const soundPlayer = ['paplay', 'pw-play', 'canberra-gtk-play'].find((name) => hasCommand(name))
 const soundFile = [
@@ -133,6 +158,7 @@ export class Notifier {
       '-a', 'OmaGram',
       '-u', 'normal',
       `--hint=string:omarchy-glyph:${GLYPH}`,
+      ...(iconName ? ['-i', iconName] : []),
       // `-A` implies --wait and prints the chosen action on stdout, so this
       // process is the live sender the action contract needs. It exits when
       // the toast is clicked, dismissed or expires.
