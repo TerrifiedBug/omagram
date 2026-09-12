@@ -278,6 +278,9 @@ function mergeDialog(entry) {
   chat.username = entry.username
   chat.archived = entry.archived
   chat.pinned = entry.pinned
+  // Only set on a forum topic row, so the panel can show which group it is in.
+  chat.group = entry.group || ''
+  chat.topicId = entry.topicId || 0
   store.setUnread(entry.chatId, entry.unread)
   applyChatNotificationPreferences(chat, { muteEndTime: entry.muteUntil })
   readOutboxMax.set(entry.chatId, entry.readOutboxMaxId)
@@ -732,12 +735,12 @@ async function handleCommand(payload, reply) {
 
     case 'press': {
       if (!payload.chatId) throw new Error('press: chatId required')
-      if (!payload.id) throw new Error('press: message id required')
+      if (!payload.messageId) throw new Error('press: message id required')
       if (connection !== 'open') throw new Error('press: not connected to Telegram')
       const chatId = String(payload.chatId)
       const row = Number(payload.row) || 0
       const col = Number(payload.col) || 0
-      const result = await tg.pressButton(chatId, payload.id, row, col)
+      const result = await tg.pressButton(chatId, payload.messageId, row, col)
       if (result.sent) ingest(chatId, result.sent, store.me?.name || 'You', true)
       reply({ t: 'ack', id, ok: true, chatId, alert: result.alert, url: result.url })
       return

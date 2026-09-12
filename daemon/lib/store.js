@@ -117,7 +117,10 @@ export class Store {
         lastText: '',
         lastFromMe: false,
         lastSender: '',
-        username: ''
+        username: '',
+        // Forum topic rows only: the group they belong to and the topic id.
+        group: '',
+        topicId: 0
       }
       this.chats.set(key, chat)
       this.markDirty()

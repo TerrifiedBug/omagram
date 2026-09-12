@@ -64,6 +64,7 @@ Item {
   signal focusRequested(string chatId)
   signal commandFailed(string command, string message)
   signal sendAcknowledged(string chatId)
+  signal buttonPressed(string chatId, string alert, string url)
 
   function request(payload) {
     var socket = socketLoader.item
@@ -90,6 +91,9 @@ Item {
   function setTyping(chatId, state) { request({ t: "typing", chatId: chatId, state: state }) }
   function setApi(apiId, apiHash) { request({ t: "api", apiId: Number(apiId), apiHash: apiHash }) }
   function sendPassword(password) { request({ t: "password", password: password }) }
+  function pressButton(chatId, messageId, row, col) {
+    return root.request({ t: "press", chatId: chatId, messageId: messageId, row: row, col: col })
+  }
 
   function setChats(list) {
     root.chats = list || []
@@ -237,6 +241,8 @@ Item {
 
       case "ack":
         if (frame.chatId) root.sendAcknowledged(frame.chatId)
+        if (frame.alert || frame.url)
+          root.buttonPressed(frame.chatId || "", frame.alert || "", frame.url || "")
         break
 
       case "error":

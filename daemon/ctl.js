@@ -78,7 +78,7 @@ async function buildRequest() {
       return {
         t: 'press',
         chatId: args[0],
-        id: args[1],
+        messageId: args[1],
         row: Number(args[2]) || 0,
         col: Number(args[3]) || 0
       }

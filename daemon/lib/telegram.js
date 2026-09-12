@@ -14,11 +14,28 @@ const APP_VERSION = '0.1.0'
 const SYSTEM_VERSION = 'Linux'
 
 const DIALOG_LIMIT = 300
+const TOPIC_LIMIT = 100
+// Telegram's "General" topic is always message 1 of a forum.
+const GENERAL_TOPIC = 1
 
 // A 32-hex api_hash and a positive integer api_id are the only shapes
 // my.telegram.org ever hands out. Anything else is a paste accident, and
 // finding out at connect time costs a round trip and a confusing error.
 const API_HASH_RE = /^[0-9a-f]{32}$/i
+
+// A forum topic is addressed as `<groupId>#<topicId>`. Everything outside this
+// module treats a chatId as opaque; only peer resolution and the topic-aware
+// calls need to take it apart.
+export function splitChatId(chatId) {
+  const text = String(chatId)
+  const hash = text.indexOf('#')
+  if (hash === -1) return { base: text, topicId: 0 }
+  return { base: text.slice(0, hash), topicId: Number(text.slice(hash + 1)) || 0 }
+}
+
+export function joinChatId(base, topicId) {
+  return topicId ? `${base}#${topicId}` : String(base)
+}
 
 function asNumber(value) {
   const n = Number(value)
@@ -41,6 +58,7 @@ export class Telegram extends EventEmitter {
     this.client = null
     this.me = null
     this.peers = new Map()
+    this.forums = new Set()
     this.handlersBound = false
   }
 
@@ -199,6 +217,7 @@ export class Telegram extends EventEmitter {
     this.client = null
     this.me = null
     this.peers.clear()
+    this.forums.clear()
     this.handlersBound = false
     if (!client) return
     try {
@@ -212,7 +231,12 @@ export class Telegram extends EventEmitter {
     return !!this.client?.connected
   }
 
-  /** Dialogs, flattened into the panel's Chat shape. */
+  /**
+   * Dialogs, flattened into the panel's Chat shape. A forum supergroup expands
+   * into one row per topic, keyed `<groupId>#<topicId>`, because otherwise
+   * every topic's messages interleave in one stream and replies land in
+   * General.
+   */
   async dialogs() {
     const list = await this.client.getDialogs({ limit: DIALOG_LIMIT })
     const out = []
@@ -222,7 +246,7 @@ export class Telegram extends EventEmitter {
       const chatId = d.id.toString()
       this.peers.set(chatId, d.inputEntity)
       const muteUntil = d.dialog?.notifySettings?.muteUntil
-      out.push({
+      const base = {
         chatId,
         name: d.title || d.name || '',
         kind: d.entity ? chatKind(d.entity) : (d.isUser ? 'user' : 'group'),
@@ -235,9 +259,65 @@ export class Telegram extends EventEmitter {
         readOutboxMaxId: asNumber(d.dialog?.readOutboxMaxId),
         top: d.message && !isService(d.message) ? d.message : null,
         topSender: d.isGroup && d.message ? displayName(d.message.sender) : ''
-      })
+      }
+
+      if (!d.entity?.forum) {
+        out.push(base)
+        continue
+      }
+
+      const topics = await this.topics(chatId)
+      if (!topics.length) {
+        out.push(base)
+        continue
+      }
+      this.forums.add(chatId)
+      for (const topic of topics) {
+        out.push({
+          ...base,
+          chatId: `${chatId}#${topic.id}`,
+          name: topic.title,
+          group: base.name,
+          topicId: topic.id,
+          unread: topic.unreadCount,
+          pinned: topic.pinned,
+          readOutboxMaxId: topic.readOutboxMaxId,
+          muteUntil: topic.muteUntil !== undefined ? topic.muteUntil : base.muteUntil,
+          top: topic.top,
+          topSender: topic.topSender
+        })
+      }
     }
     return out
+  }
+
+  /** Topics of a forum supergroup, newest activity first. */
+  async topics(chatId) {
+    try {
+      const result = await this.client.getForumTopics(await this.peer(chatId), { limit: TOPIC_LIMIT })
+      const messages = new Map((result.messages || []).map((m) => [m.id, m]))
+      const out = []
+      for (const topic of result.topics || []) {
+        if (topic.className !== 'ForumTopic') continue
+        const top = messages.get(topic.topMessage)
+        const muteUntil = topic.notifySettings?.muteUntil
+        out.push({
+          id: topic.id,
+          title: topic.title || 'Topic',
+          unreadCount: topic.unreadCount || 0,
+          pinned: !!topic.pinned,
+          closed: !!topic.closed,
+          readOutboxMaxId: asNumber(topic.readOutboxMaxId),
+          muteUntil: typeof muteUntil === 'number' ? muteUntil : undefined,
+          top: top && !isService(top) ? top : null,
+          topSender: top ? displayName(top.sender) : ''
+        })
+      }
+      return out
+    } catch (err) {
+      logger.debug({ err, chatId }, 'topics: lookup failed')
+      return []
+    }
   }
 
   /**
@@ -245,7 +325,7 @@ export class Telegram extends EventEmitter {
    * means the dialog list is stale, so refresh it once before giving up.
    */
   async peer(chatId) {
-    const key = String(chatId)
+    const key = splitChatId(chatId).base
     const cached = this.peers.get(key)
     if (cached) return cached
     try {
@@ -262,15 +342,21 @@ export class Telegram extends EventEmitter {
   }
 
   async history(chatId, limit) {
+    const { topicId } = splitChatId(chatId)
     const peer = await this.peer(chatId)
-    const list = await this.client.getMessages(peer, { limit })
+    // A topic's history is the reply thread of its opening message, which is
+    // what `replyTo` fetches. `topMsgId` only filters a server-side search.
+    const list = topicId
+      ? await this.client.getMessages(peer, { limit, replyTo: topicId })
+      : await this.client.getMessages(peer, { limit })
     return [...list].filter((m) => m && !isService(m)).reverse()
   }
 
   async send(chatId, text) {
+    const { topicId } = splitChatId(chatId)
     const peer = await this.peer(chatId)
     // No parseMode, so the text the user typed is the text that arrives.
-    return this.client.sendMessage(peer, { message: text })
+    return this.client.sendMessage(peer, topicId ? { message: text, topMsgId: topicId } : { message: text })
   }
 
   /**
@@ -316,15 +402,35 @@ export class Telegram extends EventEmitter {
   }
 
   async markRead(chatId) {
+    const { topicId } = splitChatId(chatId)
     const peer = await this.peer(chatId)
-    await this.client.markAsRead(peer)
+    // Without topMsgId this would clear every topic in the forum, not the one
+    // the user actually opened.
+    await this.client.markAsRead(peer, undefined, topicId ? { topMsgId: topicId } : undefined)
+  }
+
+  /**
+   * Which topic a message belongs to, or 0 for a non-forum chat. Telegram
+   * carries the topic as the reply thread's top message; a message posted
+   * straight into General has no reply header at all, and General is
+   * always topic 1.
+   */
+  topicOf(base, raw) {
+    if (!this.forums.has(String(base))) return 0
+    const replyTo = raw?.replyTo
+    if (replyTo?.forumTopic) {
+      return asNumber(replyTo.replyToTopId) || asNumber(replyTo.replyToMsgId) || GENERAL_TOPIC
+    }
+    return GENERAL_TOPIC
   }
 
   async typing(chatId, composing) {
     try {
+      const { topicId } = splitChatId(chatId)
       const peer = await this.peer(chatId)
       await this.client.invoke(new Api.messages.SetTyping({
         peer,
+        topMsgId: topicId || undefined,
         action: composing ? new Api.SendMessageTypingAction() : new Api.SendMessageCancelAction()
       }))
     } catch (err) {
@@ -357,15 +463,15 @@ export class Telegram extends EventEmitter {
     const deliver = async (event, name) => {
       const raw = event?.message
       if (!raw || isService(raw)) return
-      const chatId = event.chatId ? event.chatId.toString() : chatIdOf(raw.peerId)
+      const base = event.chatId ? event.chatId.toString() : chatIdOf(raw.peerId)
       let senderName = ''
       if (!raw.out) {
         const sender = await raw.getSender().catch(() => null)
         senderName = displayName(sender)
       }
       const inputPeer = await raw.getInputChat().catch(() => null)
-      if (inputPeer) this.peers.set(chatId, inputPeer)
-      this.emit(name, { chatId, raw, senderName })
+      if (inputPeer) this.peers.set(base, inputPeer)
+      this.emit(name, { chatId: joinChatId(base, this.topicOf(base, raw)), raw, senderName })
     }
 
     client.addEventHandler((event) => deliver(event, 'message'), new events.NewMessage({}))
