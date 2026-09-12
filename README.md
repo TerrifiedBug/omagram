@@ -87,7 +87,7 @@ The command asks for the code sent through the Telegram app or by SMS. It also a
 
 Opening a chat sends a read receipt to Telegram. Messages that arrive while that conversation is open are marked read as they arrive.
 
-Forum supergroups appear as one chat per topic, with the group name shown alongside the topic name. The group itself does not get a separate row. Unread counts, mutes, message history, replies, and read receipts are tracked per topic.
+Chats with topics appear as one chat per topic, with the group name shown alongside the topic name. That covers forum supergroups and private chats with a bot that has topics turned on. The group itself does not get a separate row. Unread counts, mutes, message history, replies, and read receipts are all per topic, so reading one topic leaves the others unread.
 
 Bot keyboards appear as button rows under the message. Callback and game buttons run through the daemon. A bot often answers a callback by editing the same message, which the panel updates in place. Link buttons open in the browser. Copy buttons send their text to `wl-copy`, while plain reply-keyboard buttons send their label as a message. Unsupported buttons, including payments and inline switches, stay visible but disabled.
 
