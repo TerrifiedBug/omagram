@@ -15,24 +15,33 @@ const COALESCE_MS = 1200
 const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const focusPath = join(pluginRoot, 'bin', 'omarchy-omagram-focus')
 
-function hasCommand(name) {
+function findCommand(name) {
   const dirs = (process.env.PATH || '').split(':').filter(Boolean)
-  return dirs.some((dir) => existsSync(join(dir, name)))
+  const hit = dirs.find((dir) => existsSync(join(dir, name)))
+  return hit ? join(hit, name) : ''
 }
 
-const useOmarchy = hasCommand('omarchy-notification-send')
-const canNotify = useOmarchy || hasCommand('notify-send')
+// The systemd user service inherits a minimal PATH that omits Omarchy's own
+// bin directory, so look there directly. Without the Omarchy helper the toast
+// still appears through notify-send, but clicking it cannot open the chat.
+const omarchySend = [
+  process.env.OMARCHY_PATH ? join(process.env.OMARCHY_PATH, 'bin', 'omarchy-notification-send') : '',
+  '/usr/share/omarchy/bin/omarchy-notification-send'
+].filter(Boolean).find((path) => existsSync(path)) || findCommand('omarchy-notification-send')
+
+const notifySend = findCommand('notify-send')
+const useOmarchy = !!omarchySend
+const canNotify = useOmarchy || !!notifySend
+
+function hasCommand(name) {
+  return !!findCommand(name)
+}
+
 const soundPlayer = ['paplay', 'pw-play', 'canberra-gtk-play'].find((name) => hasCommand(name))
 const soundFile = [
   '/usr/share/sounds/freedesktop/stereo/message-new-instant.oga',
   '/usr/share/sounds/freedesktop/stereo/message.oga'
 ].find((path) => existsSync(path))
-
-// Single-quote for `sh -c`: the shell hint is executed as a command string, so
-// a chat id is escaped even though it never legitimately contains a quote.
-function shellQuote(value) {
-  return `'${String(value).replace(/'/g, `'\\''`)}'`
-}
 
 export class Notifier {
   constructor() {
@@ -103,25 +112,25 @@ export class Notifier {
 
   send(title, body, chatId) {
     if (!this.enabled) return
-    // Clicking the toast opens the bar panel on the originating chat.
-    const openCommand = chatId
-      ? `bash ${shellQuote(focusPath)} ${shellQuote(chatId)}`
-      : ''
     const args = useOmarchy
-      ? [
-        '--app-name', 'OmaGram',
-        '-u', 'normal',
-        '-g', GLYPH,
-        ...(openCommand ? ['--exec', openCommand] : []),
-        title,
-        body
-      ]
+      ? ['--app-name', 'OmaGram', '-u', 'normal', '-g', GLYPH, title, body]
       : ['-a', 'OmaGram', '-u', 'normal', `--hint=string:omarchy-glyph:${GLYPH}`, title, body]
 
-    const command = useOmarchy ? 'omarchy-notification-send' : 'notify-send'
+    // Clicking the toast opens the bar panel on the originating chat.
+    // omarchy-notification-send takes `--exec <program> [args...]` as argv and
+    // only after the headline and description, so the chat id needs no quoting
+    // and the flag cannot come earlier.
+    if (useOmarchy && chatId) args.push('--exec', 'bash', focusPath, String(chatId))
+
+    const command = useOmarchy ? omarchySend : notifySend
     try {
       const child = spawn(command, args, { stdio: 'ignore', detached: true })
       child.on('error', (err) => logger.warn({ err }, 'notify: spawn failed'))
+      // A rejected argument list used to fail silently here, which is how the
+      // whole toast path stayed broken.
+      child.on('exit', (code) => {
+        if (code) logger.warn({ command, code }, 'notify: helper exited non-zero')
+      })
       child.unref()
     } catch (err) {
       logger.warn({ err }, 'notify: spawn threw')
