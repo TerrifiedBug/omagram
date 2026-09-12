@@ -169,10 +169,19 @@ function setLastError(message) {
 // Messages
 // ---------------------------------------------------------------------------
 
+// Saved Messages is the one chat where Telegram does not set `out` on a
+// message you sent, so the sender id has to be compared against the account.
+function isFromMe(raw) {
+  if (raw.out) return true
+  const me = store.me?.id
+  if (!me) return false
+  return raw.senderId ? String(raw.senderId) === me : false
+}
+
 /** Flatten a teleproto message into the shape the panel renders. */
 function flatten(chatId, raw, senderName) {
   const id = String(raw.id)
-  const fromMe = !!raw.out
+  const fromMe = isFromMe(raw)
   const message = {
     id,
     ts: raw.date || Math.floor(Date.now() / 1000),
@@ -191,6 +200,7 @@ function notifyFor(chatId, chat, message) {
   const isGroup = chat.kind === 'group'
   const title = isGroup || chat.kind === 'channel' ? (chat.name || 'Telegram') : (message.senderName || chat.name)
   const body = isGroup && message.senderName ? `${message.senderName}: ${message.text}` : message.text
+  logger.debug({ chatId, title }, 'notify: queued')
   notifier.queue({
     chatId,
     title,
@@ -210,6 +220,11 @@ function ingest(chatId, raw, senderName, live) {
   const existed = !!store.findMessage(chatId, message.id)
   store.upsertMessage(chatId, message)
   const chat = store.touchChat(chatId, message)
+
+  logger.debug(
+    { chatId, id: message.id, live, fromMe: message.fromMe, existed, ts: message.ts, startedAt },
+    'ingest'
+  )
 
   if (live && !existed && !message.fromMe) {
     // Telegram sends authoritative counts through readInbox, so a plain
