@@ -49,10 +49,6 @@ export class Notifier {
     this.enabled = canNotify && process.env.OMARCHY_OMAGRAM_NO_NOTIFY !== '1'
     /** @type {Map<string, {title: string, lines: string[], timer: NodeJS.Timeout}>} */
     this.pending = new Map()
-    // One `notify-send --wait` child per visible toast, kept so opening the
-    // chat can take its toast down instead of leaving a stale one on screen.
-    /** @type {Map<string, import('node:child_process').ChildProcess>} */
-    this.live = new Map()
     if (!canNotify) logger.warn('notify: no notify-send on PATH, notifications disabled')
   }
 
@@ -102,47 +98,22 @@ export class Notifier {
     }
   }
 
-  // Drop everything still buffered and take down anything already on screen.
-  // Used when the user opens the chat, so reading it clears its toast.
+  // Cancel a toast that has not been shown yet. An already-visible toast is
+  // left alone on purpose: it outlives its sender, and neither killing the
+  // waiting `notify-send` nor calling CloseNotification removes the card from
+  // every server (omapager's `closed` handler drops the action ref but keeps
+  // the row). Either one would leave a toast on screen whose click does
+  // nothing, which is worse than a toast that is briefly stale but still
+  // opens the chat. It goes away on dismiss or expiry.
   cancel(chatId) {
     const entry = this.pending.get(chatId)
-    if (entry) {
-      clearTimeout(entry.timer)
-      this.pending.delete(chatId)
-    }
-    this._takeDown(chatId)
-  }
-
-  // Close a visible toast through the server. Killing the waiting notify-send
-  // would not do it: the toast outlives its sender, so it would stay on screen
-  // with a dead action, which is the no-op click this path exists to avoid.
-  _takeDown(chatId) {
-    const toast = this.live.get(chatId)
-    if (!toast) return
-    this.live.delete(chatId)
-    if (toast.id) this._close(toast.id)
-    else toast.child.kill('SIGTERM')
+    if (!entry) return
+    clearTimeout(entry.timer)
+    this.pending.delete(chatId)
   }
 
   cancelAll() {
     for (const chatId of [...this.pending.keys()]) this.cancel(chatId)
-    for (const chatId of [...this.live.keys()]) this.cancel(chatId)
-  }
-
-  _close(id) {
-    try {
-      const child = spawn('busctl', [
-        '--user', 'call',
-        'org.freedesktop.Notifications',
-        '/org/freedesktop/Notifications',
-        'org.freedesktop.Notifications',
-        'CloseNotification', 'u', String(id)
-      ], { stdio: 'ignore', detached: true })
-      child.on('error', (err) => logger.debug({ err, id }, 'notify: close failed'))
-      child.unref()
-    } catch (err) {
-      logger.debug({ err, id }, 'notify: close threw')
-    }
   }
 
   // Open the bar panel on the chat the toast came from.
@@ -158,17 +129,14 @@ export class Notifier {
 
   send(title, body, chatId) {
     if (!this.enabled) return
-    // Supersede rather than stack. The old toast is closed through the server
-    // rather than replaced with `-r`: reusing the id would leave two waiters
-    // listening for the same notification, and both would fire on one click.
-    if (chatId) this._takeDown(chatId)
     const args = [
       '-a', 'OmaGram',
       '-u', 'normal',
       `--hint=string:omarchy-glyph:${GLYPH}`,
-      // `-p` prints the notification id first; `-A` implies --wait and prints
-      // the chosen action on activation. Both arrive on stdout, in that order.
-      ...(chatId ? ['-p', '-A', 'default=Open'] : []),
+      // `-A` implies --wait and prints the chosen action on stdout, so this
+      // process is the live sender the action contract needs. It exits when
+      // the toast is clicked, dismissed or expires.
+      ...(chatId ? ['-A', 'default=Open'] : []),
       title,
       body
     ]
@@ -181,32 +149,19 @@ export class Notifier {
       return
     }
     child.on('error', (err) => logger.warn({ err }, 'notify: spawn failed'))
+    child.unref()
 
-    if (!chatId) {
-      child.unref()
-      return
-    }
+    if (!chatId) return
 
-    const toast = { child, id: 0 }
-    this.live.set(chatId, toast)
-
-    let out = ''
-    let activated = false
-    child.stdout.on('data', (chunk) => {
-      out += chunk.toString('utf8')
-      for (const line of out.split('\n').map((l) => l.trim()).filter(Boolean)) {
-        if (/^\d+$/.test(line)) toast.id = Number(line)
-        else if (line === 'default') activated = true
-      }
-    })
+    let chosen = ''
+    child.stdout.on('data', (chunk) => { chosen += chunk.toString('utf8') })
     child.on('exit', (code, signal) => {
-      if (this.live.get(chatId) === toast) this.live.delete(chatId)
       if (signal) return
       if (code) {
         logger.warn({ code }, 'notify: notify-send exited non-zero')
         return
       }
-      if (activated) this._activate(chatId)
+      if (chosen.trim() === 'default') this._activate(chatId)
     })
   }
 }
