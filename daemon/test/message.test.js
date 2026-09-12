@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { isService, messageText, messageType } from '../lib/message.js'
+import { isService, messageButtons, messageText, messageType } from '../lib/message.js'
 
 test('describes a photo', () => {
   const message = { className: 'Message', message: '', media: { className: 'MessageMediaPhoto' } }
@@ -57,4 +57,41 @@ test('uses a media caption instead of its placeholder', () => {
 
 test('recognizes service messages', () => {
   assert.equal(isService({ className: 'MessageService' }), true)
+})
+
+test('maps a bot keyboard to actionable button rows', () => {
+  const message = {
+    className: 'Message',
+    message: 'Choose a bot',
+    replyMarkup: {
+      className: 'ReplyInlineMarkup',
+      rows: [
+        {
+          buttons: [
+            { className: 'KeyboardInlineButton', text: '@a_bot', type: { className: 'InlineButtonTypeCallback', data: Buffer.from('x') } },
+            { className: 'KeyboardInlineButton', text: 'Docs', type: { className: 'InlineButtonTypeUrl', url: 'https://core.telegram.org' } }
+          ]
+        },
+        {
+          buttons: [
+            { className: 'KeyboardInlineButton', text: 'Pay', type: { className: 'InlineButtonTypeBuy' } },
+            { className: 'KeyboardInlineButton', text: '', type: { className: 'InlineButtonTypeCallback' } }
+          ]
+        }
+      ]
+    }
+  }
+
+  assert.deepEqual(messageButtons(message), [
+    [
+      { text: '@a_bot', kind: 'callback', url: '' },
+      { text: 'Docs', kind: 'url', url: 'https://core.telegram.org' }
+    ],
+    [{ text: 'Pay', kind: 'unsupported', url: '' }]
+  ])
+})
+
+test('reports no buttons for an ordinary message', () => {
+  assert.deepEqual(messageButtons({ className: 'Message', message: 'hi' }), [])
+  assert.deepEqual(messageButtons({ className: 'Message', replyMarkup: { className: 'ReplyKeyboardHide' } }), [])
 })

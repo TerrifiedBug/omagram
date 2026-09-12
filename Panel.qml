@@ -264,8 +264,13 @@ Panel {
       root.patchMessage(messageId, { imagePath: imagePath })
     }
 
+    function onButtonPressed(chatId, alert, url) {
+      if (alert && alert.length > 0) root.statusLine = alert
+      if (url && url.length > 0) Qt.openUrlExternally(url)
+    }
+
     function onCommandFailed(command, message) {
-      if (command === "send") root.statusLine = message
+      if (command === "send" || command === "press") root.statusLine = message
       if (command === "refresh") {
         root.refreshing = false
         refreshWatchdog.stop()
@@ -281,6 +286,25 @@ Panel {
     function open(url) {
       targetUrl = url
       running = true
+    }
+  }
+
+  Process {
+    id: clipboardWriter
+    property string pendingText: ""
+    command: ["wl-copy"]
+    stdinEnabled: true
+
+    function copyText(text) {
+      if (clipboardWriter.running) return
+      clipboardWriter.pendingText = text
+      clipboardWriter.stdinEnabled = true
+      clipboardWriter.running = true
+    }
+
+    onStarted: {
+      clipboardWriter.write(clipboardWriter.pendingText)
+      clipboardWriter.stdinEnabled = false
     }
   }
 
@@ -842,6 +866,8 @@ Panel {
                 readonly property real maxInner: Math.max(Style.space(60), bubbleRow.width * 0.82 - bubbleRow.pad * 2)
                 readonly property bool hasImage: messageRow.modelData.imagePath
                   && String(messageRow.modelData.imagePath).length > 0
+                readonly property var buttonRows: messageRow.modelData.buttons || []
+                readonly property bool hasButtons: bubbleRow.buttonRows.length > 0
                 readonly property bool showBody: {
                   var text = messageRow.modelData.text || ""
                   if (!text.length) return false
@@ -868,11 +894,13 @@ Panel {
                     x: bubbleRow.pad
                     y: bubbleRow.pad / 2
                     spacing: Style.space(1)
-                    width: Math.max(
-                      bubbleRow.showSender ? senderLabel.width : 0,
-                      bubbleRow.hasImage ? photo.width : 0,
-                      bodyLabel.visible ? bodyLabel.width : 0,
-                      Math.min(metaLabel.implicitWidth, bubbleRow.maxInner))
+                    width: bubbleRow.hasButtons
+                      ? bubbleRow.maxInner
+                      : Math.max(
+                          bubbleRow.showSender ? senderLabel.width : 0,
+                          bubbleRow.hasImage ? photo.width : 0,
+                          bodyLabel.visible ? bodyLabel.width : 0,
+                          Math.min(metaLabel.implicitWidth, bubbleRow.maxInner))
 
                     Text {
                       textFormat: Text.PlainText
@@ -965,6 +993,90 @@ Panel {
                         : root.secondaryForeground
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.caption
+                    }
+
+                    Column {
+                      id: keyboard
+                      visible: bubbleRow.hasButtons
+                      width: parent.width
+                      spacing: Style.space(2)
+
+                      Repeater {
+                        model: bubbleRow.buttonRows
+
+                        delegate: Row {
+                          id: buttonRow
+                          required property var modelData
+                          required property int index
+
+                          width: keyboard.width
+                          spacing: Style.space(2)
+
+                          Repeater {
+                            id: buttonRepeater
+                            model: buttonRow.modelData || []
+
+                            delegate: Button {
+                              id: keyboardButton
+                              required property var modelData
+                              required property int index
+
+                              readonly property string buttonKind: keyboardButton.modelData.kind || "unsupported"
+                              width: buttonRepeater.count > 0
+                                ? (buttonRow.width - buttonRow.spacing * (buttonRepeater.count - 1)) / buttonRepeater.count
+                                : 0
+                              implicitHeight: buttonLabel.implicitHeight
+                                + keyboardButton.verticalPadding * 2
+                                + keyboardButton.borderTop
+                                + keyboardButton.borderBottom
+                              text: ""
+                              foreground: root.foreground
+                              fontFamily: root.fontFamily
+                              fontSize: Style.font.caption
+                              horizontalPadding: Style.space(4)
+                              verticalPadding: Style.space(3)
+                              bordered: true
+                              clip: true
+                              enabled: keyboardButton.buttonKind === "callback"
+                                || keyboardButton.buttonKind === "text"
+                                || (keyboardButton.buttonKind === "url"
+                                  && String(keyboardButton.modelData.url || "").length > 0)
+                                || (keyboardButton.buttonKind === "copy"
+                                  && String(keyboardButton.modelData.url || "").length > 0)
+                              opacity: keyboardButton.enabled ? 1 : 0.45
+
+                              onClicked: {
+                                if (keyboardButton.buttonKind === "callback"
+                                    || keyboardButton.buttonKind === "text") {
+                                  if (root.client)
+                                    root.client.pressButton(root.activeChatId, messageRow.modelData.id,
+                                      buttonRow.index, keyboardButton.index)
+                                } else if (keyboardButton.buttonKind === "url") {
+                                  Qt.openUrlExternally(keyboardButton.modelData.url)
+                                } else if (keyboardButton.buttonKind === "copy") {
+                                  clipboardWriter.copyText(keyboardButton.modelData.url)
+                                }
+                              }
+
+                              Text {
+                                id: buttonLabel
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.leftMargin: keyboardButton.horizontalPadding + keyboardButton.borderLeft
+                                anchors.rightMargin: keyboardButton.horizontalPadding + keyboardButton.borderRight
+                                anchors.verticalCenter: parent.verticalCenter
+                                textFormat: Text.PlainText
+                                text: keyboardButton.modelData.text || ""
+                                color: root.foreground
+                                font.family: root.fontFamily
+                                font.pixelSize: Style.font.caption
+                                horizontalAlignment: Text.AlignHCenter
+                                elide: Text.ElideRight
+                              }
+                            }
+                          }
+                        }
+                      }
                     }
                   }
                 }
