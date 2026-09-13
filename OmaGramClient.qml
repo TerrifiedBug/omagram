@@ -87,7 +87,8 @@ Item {
   }
 
   function refresh() { request({ t: "refresh" }) }
-  function openChat(chatId) { request({ t: "messages", chatId: chatId, limit: root.messageLimit }) }
+  // A limit of 0 would be dropped by the daemon's `payload.limit || 60`.
+  function openChat(chatId) { request({ t: "messages", chatId: chatId, limit: Math.max(1, root.messageLimit) }) }
   function markRead(chatId) { request({ t: "read", chatId: chatId }) }
   function reconnect() { request({ t: "reconnect" }) }
   function logout() { request({ t: "logout" }) }

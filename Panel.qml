@@ -65,9 +65,7 @@ Panel {
     return list[index]
   }
 
-  // The daemon broadcasts a fixed 60-chat snapshot, so asking for more than
-  // that gets 60 either way. Clamping keeps the setting honest instead of
-  // accepting a number the panel can never show.
+  // The daemon broadcasts up to 60 chats per snapshot.
   readonly property int daemonChatSnapshot: 60
 
   readonly property var visibleChats: {
