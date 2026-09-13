@@ -65,9 +65,14 @@ Panel {
     return list[index]
   }
 
+  // The daemon broadcasts a fixed 60-chat snapshot, so asking for more than
+  // that gets 60 either way. Clamping keeps the setting honest instead of
+  // accepting a number the panel can never show.
+  readonly property int daemonChatSnapshot: 60
+
   readonly property var visibleChats: {
     var list = root.chats || []
-    return list.slice(0, Math.max(1, root.chatLimit))
+    return list.slice(0, Math.min(root.daemonChatSnapshot, Math.max(1, root.chatLimit)))
   }
 
   // Point the panel at a chat without touching read state. Used by the focus

@@ -59,7 +59,7 @@
         "key": "chatLimit",
         "type": "int",
         "label": "Chats listed in the panel",
-        "description": "How many chats the panel asks the daemon for. Higher values mean a longer list and a slightly bigger snapshot.",
+        "description": "How many chats the panel lists, up to the 60 the daemon broadcasts.",
         "defaultValue": 40
       },
       {

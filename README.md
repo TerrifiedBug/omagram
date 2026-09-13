@@ -191,7 +191,7 @@ reload when the file changes:
 | `autostartDaemon` | `true` | Start the daemon when the panel cannot reach its socket |
 | `showUnreadCount` | `true` | Show the unread total beside the Telegram glyph |
 | `hideWhenEmpty` | `false` | Hide the widget while the unread total is zero |
-| `chatLimit` | `40` | Number of chats shown in the panel |
+| `chatLimit` | `40` | Number of chats shown in the panel, up to the 60 the daemon sends |
 | `messageLimit` | `60` | Number of messages loaded when a conversation opens |
 | `clientPattern` | `"org.telegram.desktop"` | Window class or title pattern used by the bar icon's right-click action |
 | `clientCommand` | `"uwsm-app -- Telegram"` | Command used by the bar icon's right-click action when no matching window exists |
