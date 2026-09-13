@@ -1,6 +1,9 @@
-# OmaGram for Omarchy
+# OmaGram
 
-OmaGram puts Telegram in the Omarchy Quattro bar. It shows an unread badge, sends clickable desktop notifications, lists recent chats, and lets you read and reply from the panel. The full Telegram Desktop client is one click away for calls, search, and anything the panel does not handle.
+OmaGram puts Telegram in the Omarchy bar. Its icon shows the unread count and
+opens a panel where you can read recent chats and reply. Desktop notifications
+open the right chat. Open Telegram Desktop for calls, search or anything the
+panel doesn't handle.
 
 ## How it works
 
@@ -9,7 +12,10 @@ OmaGram puts Telegram in the Omarchy Quattro bar. It shows an unread badge, send
 | Bridge daemon (Node.js + [`teleproto@1.229.0`](https://www.npmjs.com/package/teleproto)) | Logs in to Telegram over MTProto, keeps chat state, sends notifications, and handles messages and read receipts |
 | Bar plugin (QML) | Shows the badge, chat list, conversation view, login controls, and reply box |
 
-The two processes exchange NDJSON over a Unix socket in `$XDG_RUNTIME_DIR`. No localhost port is opened. The daemon holds the Telegram session, so bars on several monitors share the same state and notification clicks can select a chat in the panel.
+The daemon and plugin exchange NDJSON over a Unix socket in
+`$XDG_RUNTIME_DIR`; they don't open a localhost port. The daemon owns the
+Telegram session, so every bar sees the same state across your monitors.
+Notification clicks can also point the panel at a chat.
 
 ## Install
 
@@ -17,9 +23,11 @@ The two processes exchange NDJSON over a Unix socket in `$XDG_RUNTIME_DIR`. No l
 omarchy plugin add https://github.com/TerrifiedBug/omagram.git --enable --yes
 ```
 
-The first start installs the daemon dependencies, creates the `omarchy-omagram.service` user service, and links the command-line tools into `~/.local/bin`.
+With the default settings, the first widget start installs the daemon
+dependencies, creates the `omarchy-omagram.service` user service and links the
+command-line tools into `~/.local/bin`.
 
-From a source checkout:
+To install from a source checkout:
 
 ```sh
 git clone https://github.com/TerrifiedBug/omagram.git
@@ -27,31 +35,41 @@ cd omagram
 ./install.sh
 ```
 
-OmaGram requires the Omarchy Quattro shell, Node.js 20 or newer, and `jq` for the terminal login flow. Setup checks `PATH` and common mise, proto, fnm, Volta, and Bun locations for Node, then records the selected path in the user service. Telegram Desktop is the default full client.
+You need the Omarchy Quattro shell, Node.js 20 or newer and `jq` for terminal
+login. Setup looks for Node on `PATH` and in common mise, proto, fnm, Volta and
+Bun locations, then saves the selected path in the user service. Telegram
+Desktop is the default full client.
 
 ## Get an `api_id` and `api_hash`
 
-Telegram requires each user to supply an application ID and hash:
+Telegram requires an application ID and hash for each user:
 
 1. Sign in at [my.telegram.org](https://my.telegram.org/apps).
 2. Open **API development tools** and create an application.
 3. Copy its `api_id` and `api_hash` into the OmaGram login form, or enter them when `omarchy-omagram login` asks.
 
-You must create your own credentials. Publishing one shared credential in a public plugin can cause Telegram to reject it with `API_ID_PUBLISHED_FLOOD`, so OmaGram does not bundle one. The daemon saves your values in `~/.local/state/omarchy-omagram/api.json` with mode `0600`.
+Create your own credentials. Telegram can reject a shared credential published
+with a public plugin as `API_ID_PUBLISHED_FLOOD`, so OmaGram doesn't ship one.
+The daemon saves your values in `~/.local/state/omarchy-omagram/api.json` with
+mode `0600`.
 
 ## Log in
 
 ### QR code
 
-Click the OmaGram icon. Enter your API credentials if asked, then scan the QR code from **Telegram > Settings > Devices > Link Desktop Device**. If your account has two-step verification, the panel asks for your password after the scan.
+Open OmaGram from the bar. Enter your API credentials if asked, then scan the
+QR code from **Telegram > Settings > Devices > Link Desktop Device**. The panel
+asks for your password after the scan if you use two-step verification.
 
-The terminal flow shows the same QR code:
+The terminal command uses the same QR code:
 
 ```sh
 omarchy-omagram login
 ```
 
-The daemon removes an unused QR after five minutes. Start login again to get a new one. You can change the window with a systemd override:
+OmaGram clears an unused QR after five minutes. Start login again for a new one.
+You can change the pairing timer with a systemd override. A separate limit of
+16 refreshed QR codes still applies:
 
 ```sh
 systemctl --user edit omarchy-omagram.service
@@ -60,13 +78,16 @@ systemctl --user edit omarchy-omagram.service
 
 ### Phone and code
 
-Pass your phone number in international format:
+Use your phone number in international format:
 
 ```sh
 omarchy-omagram login --phone +441234567890
 ```
 
-The command asks for the code sent through the Telegram app or by SMS. It also asks for your two-step verification password when enabled. API hashes, login codes, and passwords are sent to the daemon over standard input, so they do not appear in the process argument list.
+The code arrives through the Telegram app or by SMS. The command also asks for
+your two-step verification password when enabled. The login script reads API
+hashes, login codes and passwords from standard input and sends them over the
+Unix socket, keeping them out of the process argument list.
 
 ## Use the panel
 
@@ -85,15 +106,24 @@ The command asks for the code sent through the Telegram app or by SMS. It also a
 | Open a chat from a notification | Click the notification |
 | View a downloaded photo | Click its preview |
 
-Opening a chat sends a read receipt to Telegram. Messages that arrive while that conversation is open are marked read as they arrive.
+Opening a chat sends a read receipt to Telegram. New messages are marked read
+as they arrive while you have that conversation open.
 
-Chats with topics appear as one chat per topic, with the group name shown alongside the topic name. That covers forum supergroups and private chats with a bot that has topics turned on. The group itself does not get a separate row. Unread counts, mutes, message history, replies, and read receipts are all per topic, so reading one topic leaves the others unread.
+Each topic gets its own chat row, with the group name beside the topic name.
+This applies to forum supergroups and private chats with a bot whose topics are
+turned on. There is no extra row for the group itself. Unread counts, mutes,
+message history, replies and read receipts belong to the topic, so reading one
+leaves the others unread.
 
-Bot keyboards appear as button rows under the message. Callback and game buttons run through the daemon. A bot often answers a callback by editing the same message, which the panel updates in place. Link buttons open in the browser. Copy buttons send their text to `wl-copy`, while plain reply-keyboard buttons send their label as a message. Unsupported buttons, including payments and inline switches, stay visible but disabled.
+Bot keyboards sit under their messages. Callback and game buttons go through
+the daemon. If a bot answers by editing the same message, the panel updates it
+in place. Link buttons open in the browser. Copy buttons send their text to
+`wl-copy`; plain reply-keyboard buttons send their label as a message. Payments,
+inline switches and other unsupported buttons remain visible but disabled.
 
 ## CLI
 
-The `omarchy-omagram` dispatcher supports these commands:
+Use `omarchy-omagram` for the main commands:
 
 | Command | Purpose |
 |---------|---------|
@@ -117,9 +147,12 @@ The `omarchy-omagram` dispatcher supports these commands:
 | `restart` | Restart `omarchy-omagram.service` |
 | `logs [-f]` | Show the latest 100 daemon journal lines, optionally following them |
 
-Telegram chat IDs for ordinary chats are decimal strings. User IDs are positive, group IDs are negative, and channels or supergroups use the `-100...` form. A forum topic adds `#<topicId>` to its group ID, such as `-1004490104934#2`; General is always topic `1`. Get the full chat ID from `omarchy-omagram chats`.
+Ordinary Telegram chat IDs are decimal strings. User IDs are positive, group
+IDs are negative, and channels or supergroups use the `-100...` form. A forum
+topic adds `#<topicId>` to its group ID, such as `-1004490104934#2`; General is
+always topic `1`. Run `omarchy-omagram chats` to get the full chat ID.
 
-`omarchy-omagram ctl` calls the same raw client as `omarchy-omagram-ctl`. It accepts:
+`omarchy-omagram ctl` and `omarchy-omagram-ctl` use the same raw daemon client:
 
 | Raw command | Purpose |
 |-------------|---------|
@@ -140,11 +173,13 @@ Telegram chat IDs for ordinary chats are decimal strings. User IDs are positive,
 | `logout` | End the Telegram session and clear local chat state |
 | `ping` | Check whether the daemon is responding |
 
-The setup command and the first widget start create the command links in `~/.local/bin`.
+The setup command and first widget start both create the command links in
+`~/.local/bin`.
 
 ## Settings
 
-Widget settings live on the bar entry in `~/.config/omarchy/shell.json` and reload when the file changes:
+The bar entry in `~/.config/omarchy/shell.json` holds the widget settings. They
+reload when the file changes:
 
 ```json
 { "id": "io.github.terrifiedbug.omagram", "showUnreadCount": true, "chatLimit": 40 }
@@ -158,13 +193,14 @@ Widget settings live on the bar entry in `~/.config/omarchy/shell.json` and relo
 | `hideWhenEmpty` | `false` | Hide the widget while the unread total is zero |
 | `chatLimit` | `40` | Number of chats shown in the panel |
 | `messageLimit` | `60` | Number of messages loaded when a conversation opens |
-| `clientPattern` | `"org.telegram.desktop"` | Hyprland window class or title pattern used to focus Telegram Desktop |
-| `clientCommand` | `"uwsm-app -- Telegram"` | Command used to launch Telegram Desktop when no matching window exists |
-| `webAppUrl` | `""` | Telegram Web URL; blank uses Telegram Desktop |
+| `clientPattern` | `"org.telegram.desktop"` | Window class or title pattern used by the bar icon's right-click action |
+| `clientCommand` | `"uwsm-app -- Telegram"` | Command used by the bar icon's right-click action when no matching window exists |
+| `webAppUrl` | `""` | Telegram Web URL for the bar icon's right-click action; blank uses Telegram Desktop |
 
-Set `webAppUrl` to `https://web.telegram.org/k/` to use Telegram Web as the full client.
+To make the bar icon's right-click action use Telegram Web, set `webAppUrl` to
+`https://web.telegram.org/k/`.
 
-Move the widget with:
+To move the widget:
 
 ```sh
 omarchy bar move io.github.terrifiedbug.omagram --section right
@@ -179,20 +215,44 @@ omarchy bar move io.github.terrifiedbug.omagram --section right
 | `~/.local/state/omarchy-omagram/store.json` | Cached chats and recent messages (`0600`) |
 | `~/.local/state/omarchy-omagram/daemon.pid` | PID of the running daemon (`0600`) |
 | `~/.local/state/omarchy-omagram/qr.<n>.png` and `qr.txt` | Temporary login QR files (`0600`) |
-| `~/.cache/omarchy-omagram/media/` | Photo previews from chats you have opened; each file is `0600` and limited to 12 MiB |
+| `~/.cache/omarchy-omagram/media/` | Message-photo previews from chats you have opened and chat avatars used in notifications; each file is `0600`, and each preview is limited to 12 MiB |
 | `$XDG_RUNTIME_DIR/omarchy-omagram.sock` | Daemon control socket (`0600`) |
 
-The state and media directories use mode `0700`. `OMARCHY_OMAGRAM_STATE`, `OMARCHY_OMAGRAM_MEDIA`, and `OMARCHY_OMAGRAM_SOCKET` can move them. Logging out removes the Telegram session and media cache, clears the chat store, and keeps `api.json`. Uninstalling removes the state and cache directories.
+OmaGram creates the state and media directories with mode `0700`.
+`OMARCHY_OMAGRAM_STATE`, `OMARCHY_OMAGRAM_MEDIA`, and
+`OMARCHY_OMAGRAM_SOCKET` can move them. Logging out removes the Telegram session
+and media cache, clears the chat store, and keeps `api.json`. Uninstalling
+removes the state directory and default media cache.
 
-## Things worth knowing before you install
+## Before you install
 
-- OmaGram is an unofficial third-party MTProto client built on teleproto. It logs in as your account, and Telegram can associate its API use with that account. Telegram explains this in its [API ID documentation](https://core.telegram.org/api/obtaining_api_id). OmaGram is not affiliated with or endorsed by Telegram.
-- The daemon leaves your presence state alone. It never calls `account.updateStatus` to force you online or fake an offline state. Telegram's API terms prohibit using the API for a ghost mode.
-- Opening a chat sends a real read receipt. It has the same effect as opening that chat in another Telegram client.
-- The daemon downloads only photos from chats you have opened. Each download is capped at 12 MiB. Other media stays as a text placeholder for the full client.
-- Muted and archived chats do not send desktop notifications and do not count toward the bar badge. A timed mute begins counting again after it expires.
-- Clicking a notification opens the chat. That uses a standard libnotify action, so the toast stays live while its sender process does, and a toast already on screen is not withdrawn when you read the chat elsewhere. It goes when you dismiss it or it expires.
-- Plugins run inside `omarchy-shell` without a sandbox. OmaGram keeps MTProto and network access in the separate Node.js daemon; the QML plugin exchanges JSON with that daemon over its Unix socket.
+OmaGram is an unofficial third-party MTProto client built on teleproto. It logs
+in as your account, and Telegram can associate its API use with that account.
+Telegram explains this in its [API ID documentation](https://core.telegram.org/api/obtaining_api_id).
+OmaGram isn't affiliated with or endorsed by Telegram.
+
+The daemon leaves your presence state alone. It never calls
+`account.updateStatus` to force you online or fake an offline state. Telegram's
+API terms prohibit using the API for a ghost mode.
+
+Opening a chat sends a real read receipt, with the same effect as opening it in
+another Telegram client.
+
+The daemon downloads message photos only from chats you have opened and caps
+each at 12 MiB. Other message media stays as a text placeholder for the full
+client. It may also cache chat avatars for notifications.
+
+Muted and archived chats don't send desktop notifications or count toward the
+bar badge. A timed mute starts counting again when it expires.
+
+Notification clicks open the chat through a standard libnotify action. The
+toast stays live while its sender process does. Reading the chat elsewhere
+doesn't withdraw a toast already on screen; it remains until you dismiss it or
+it expires.
+
+Plugins run inside `omarchy-shell` without a sandbox. The separate Node.js
+daemon handles MTProto and network access; the QML plugin exchanges JSON with
+it over the Unix socket.
 
 ## Environment variables
 
@@ -212,7 +272,9 @@ The state and media directories use mode `0700`. `OMARCHY_OMAGRAM_STATE`, `OMARC
 | `OMARCHY_OMAGRAM_CLIENT_PATTERN` | `"org.telegram.desktop"` | Window pattern used by `omarchy-omagram open` |
 | `OMARCHY_OMAGRAM_CLIENT_COMMAND` | `"uwsm-app -- Telegram"` | Desktop launch command used by `omarchy-omagram open` |
 
-The widget supplies the last three variables from `webAppUrl`, `clientPattern`, and `clientCommand`. Set other variables in a user-service override, then restart the service.
+The widget passes the last three variables from `webAppUrl`, `clientPattern`,
+and `clientCommand`. Set the others in a user-service override, then restart the
+service.
 
 ## Troubleshooting
 
@@ -262,14 +324,17 @@ qs log -p "$OMARCHY_PATH/shell" --tail 100
 omarchy plugin remove io.github.terrifiedbug.omagram
 ```
 
-After the plugin directory is gone, the installed sweep service removes the user service, CLI links, state directory, and media cache at the next user-session start. To delete that data immediately, run the uninstall command while the plugin is still installed:
+Once the plugin directory is gone, the installed sweep service removes the user
+service, CLI links, and default state and media cache directories at the next
+user-session start. For immediate cleanup, run the uninstall command while the
+plugin is still installed:
 
 ```sh
 omarchy-omagram uninstall
 omarchy plugin remove io.github.terrifiedbug.omagram
 ```
 
-From a source checkout, you can run:
+From a source checkout:
 
 ```sh
 ./install.sh --uninstall
@@ -279,6 +344,6 @@ Disabling the plugin stops and disables `omarchy-omagram.service` while preservi
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
-
-OmaGram is derived from [omarchy-whatsapp by ricky](https://github.com/srineshr1/omarchy-whatsapp), released under the MIT License.
+MIT, see [LICENSE](LICENSE). OmaGram is derived from
+[omarchy-whatsapp by ricky](https://github.com/srineshr1/omarchy-whatsapp),
+which was released under the MIT License.
