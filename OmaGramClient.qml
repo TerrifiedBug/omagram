@@ -53,6 +53,9 @@ Item {
   // trustworthy, so liveness is tracked here instead.
   property bool linkUp: false
   property double lastFrameMs: 0
+  // How many messages the daemon loads and replies with when a chat opens.
+  // Bound from the plugin setting; the daemon falls back to 60 without it.
+  property int messageLimit: 60
 
   readonly property bool signedIn: linked === true || (needsLogin !== true && (me !== null || (chats && chats.length > 0)))
   readonly property bool ready: signedIn && connectionState === "open"
@@ -84,7 +87,7 @@ Item {
   }
 
   function refresh() { request({ t: "refresh" }) }
-  function openChat(chatId) { request({ t: "messages", chatId: chatId }) }
+  function openChat(chatId) { request({ t: "messages", chatId: chatId, limit: root.messageLimit }) }
   function markRead(chatId) { request({ t: "read", chatId: chatId }) }
   function reconnect() { request({ t: "reconnect" }) }
   function logout() { request({ t: "logout" }) }

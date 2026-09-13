@@ -77,6 +77,7 @@ BarWidget {
     pluginDir: root.pluginDir
     socketPath: root.setting("socketPath", "")
     autostartDaemon: root.setting("autostartDaemon", true) === true
+    messageLimit: root.setting("messageLimit", 60)
     onFocusRequested: function (chatId) { root.focusChat(chatId) }
   }
 

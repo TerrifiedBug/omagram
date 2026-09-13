@@ -49,7 +49,6 @@ Panel {
   readonly property color foreground: root.bar ? root.bar.foreground : Color.foreground
   readonly property color secondaryForeground: Qt.darker(root.foreground, 1.5)
   readonly property int chatLimit: root.setting("chatLimit", 40)
-  readonly property int messageLimit: root.setting("messageLimit", 60)
 
   function open() { root.controller.show() }
   function close() { root.controller.hide() }
