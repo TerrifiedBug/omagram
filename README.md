@@ -342,6 +342,12 @@ From a source checkout:
 
 Disabling the plugin stops and disables `omarchy-omagram.service` while preserving the Telegram session and cache for the next enable.
 
+## Theme compatibility
+
+Theme colors use a namespaced `qs.Commons.Color` import to avoid Qt 6.12's
+`Color` name collision. This keeps the existing palette roles and fallbacks
+without changing the plugin's Omarchy requirements.
+
 ## License
 
 MIT, see [LICENSE](LICENSE). OmaGram is derived from

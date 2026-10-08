@@ -6,6 +6,7 @@ import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 
@@ -46,7 +47,7 @@ Panel {
   // Popup content must use the theme foreground. barForeground can switch to
   // a wallpaper-contrast color when the bar is transparent, which may be dark
   // even though the popup surface remains dark.
-  readonly property color foreground: root.bar ? root.bar.foreground : Color.foreground
+  readonly property color foreground: root.bar ? root.bar.foreground : Commons.Color.foreground
   readonly property color secondaryForeground: Qt.darker(root.foreground, 1.5)
   readonly property int chatLimit: root.setting("chatLimit", 40)
 
@@ -396,8 +397,8 @@ Panel {
             anchors.verticalCenter: parent.verticalCenter
             radius: 0
             color: backMouse.containsMouse
-              ? Style.hoverFillFor(root.foreground, root.bar ? root.bar.urgent : Color.accent)
-              : Style.normalFillFor(root.foreground, Color.accent)
+              ? Style.hoverFillFor(root.foreground, root.bar ? root.bar.urgent : Commons.Color.accent)
+              : Style.normalFillFor(root.foreground, Commons.Color.accent)
             border.color: root.foreground
             border.width: 1
 
@@ -453,7 +454,7 @@ Panel {
               }
               visible: text.length > 0
               color: root.statusLine.length > 0 || (root.client && root.client.lastError.length > 0)
-                ? (root.bar ? root.bar.urgent : Color.urgent)
+                ? (root.bar ? root.bar.urgent : Commons.Color.urgent)
                 : root.secondaryForeground
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -493,7 +494,7 @@ Panel {
               iconText: "\uf011"
               tooltipText: "Log out of Telegram"
               foreground: root.foreground
-              hoverColor: root.bar ? root.bar.urgent : Color.urgent
+              hoverColor: root.bar ? root.bar.urgent : Commons.Color.urgent
               fontFamily: root.fontFamily
               onClicked: root.requestLogout()
             }
@@ -538,7 +539,7 @@ Panel {
               inputMethodHints: Qt.ImhDigitsOnly
               placeholderText: "api_id"
               foreground: root.foreground
-              accent: root.bar ? root.bar.urgent : Color.accent
+              accent: root.bar ? root.bar.urgent : Commons.Color.accent
             }
 
             TextField {
@@ -547,7 +548,7 @@ Panel {
               placeholderText: "api_hash"
               echoMode: TextInput.Password
               foreground: root.foreground
-              accent: root.bar ? root.bar.urgent : Color.accent
+              accent: root.bar ? root.bar.urgent : Commons.Color.accent
             }
 
             Button {
@@ -601,7 +602,7 @@ Panel {
               placeholderText: "Password"
               echoMode: TextInput.Password
               foreground: root.foreground
-              accent: root.bar ? root.bar.urgent : Color.accent
+              accent: root.bar ? root.bar.urgent : Commons.Color.accent
               onAccepted: root.submitPassword()
             }
 
@@ -725,7 +726,7 @@ Panel {
               implicitHeight: rowText.implicitHeight + Style.space(10)
               height: implicitHeight
               foreground: root.foreground
-              accent: root.bar ? root.bar.urgent : Color.accent
+              accent: root.bar ? root.bar.urgent : Commons.Color.accent
               hasCursor: root.cursorIndex === chatRow.index
 
               Column {
@@ -797,14 +798,14 @@ Panel {
                   width: implicitWidth
                   height: implicitHeight
                   radius: height / 2
-                  color: root.bar ? root.bar.urgent : Color.urgent
+                  color: root.bar ? root.bar.urgent : Commons.Color.urgent
 
                   Text {
                     textFormat: Text.PlainText
                     id: badgeLabel
                     anchors.centerIn: parent
                     text: Model.badgeText(chatRow.modelData.unread)
-                    color: Color.background
+                    color: Commons.Color.background
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
                     font.bold: true
@@ -899,8 +900,8 @@ Panel {
                   anchors.left: messageRow.modelData.fromMe ? undefined : parent.left
                   radius: Style.cornerRadius > 0 ? Style.cornerRadius : Style.space(6)
                   color: messageRow.modelData.fromMe
-                    ? Style.selectedFillFor(root.foreground, root.bar ? root.bar.urgent : Color.accent)
-                    : Style.normalFillFor(root.foreground, Color.accent)
+                    ? Style.selectedFillFor(root.foreground, root.bar ? root.bar.urgent : Commons.Color.accent)
+                    : Style.normalFillFor(root.foreground, Commons.Color.accent)
 
                   Column {
                     id: bubbleContent
@@ -921,7 +922,7 @@ Panel {
                       visible: bubbleRow.showSender
                       width: Math.min(implicitWidth, bubbleRow.maxInner)
                       text: messageRow.modelData.senderName || ""
-                      color: root.bar ? root.bar.urgent : Color.accent
+                      color: root.bar ? root.bar.urgent : Commons.Color.accent
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.caption
                       font.bold: true
@@ -971,9 +972,9 @@ Panel {
                       visible: bubbleRow.showBody
                       width: Math.min(implicitWidth, bubbleRow.maxInner)
                       textFormat: Text.StyledText
-                      text: Model.formatMessageText(messageRow.modelData.text, root.bar ? root.bar.urgent : Color.accent)
+                      text: Model.formatMessageText(messageRow.modelData.text, root.bar ? root.bar.urgent : Commons.Color.accent)
                       color: root.foreground
-                      linkColor: root.bar ? root.bar.urgent : Color.accent
+                      linkColor: root.bar ? root.bar.urgent : Commons.Color.accent
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.body
                       wrapMode: Text.Wrap
@@ -1002,7 +1003,7 @@ Panel {
                         return stampText + " " + Model.statusGlyph(messageRow.modelData.status)
                       }
                       color: messageRow.modelData.fromMe && Model.statusIsRead(messageRow.modelData.status)
-                        ? (root.bar ? root.bar.urgent : Color.accent)
+                        ? (root.bar ? root.bar.urgent : Commons.Color.accent)
                         : root.secondaryForeground
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.caption
@@ -1118,7 +1119,7 @@ Panel {
               anchors.rightMargin: Style.space(6)
               anchors.verticalCenter: parent.verticalCenter
               foreground: root.foreground
-              accent: root.bar ? root.bar.urgent : Color.accent
+              accent: root.bar ? root.bar.urgent : Commons.Color.accent
               placeholderText: root.linked ? "Reply\u2026" : "Not connected"
               enabled: root.linked
               onAccepted: root.sendReply()
